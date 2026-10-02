@@ -26,7 +26,8 @@ def build_parser() -> argparse.ArgumentParser:
     ev = sub.add_parser("eval", help="read-only: classify inbox mail into data/eval-*.csv")
     ev.add_argument("--limit", type=int, default=500)
     ev.add_argument("--from", dest="from_csv", type=Path,
-                    help="re-classify the emails in a labelled CSV, keeping true_* columns")
+                    help="re-classify the emails in a labelled CSV, keeping true_* columns "
+                         "(--limit is ignored with --from)")
     sc = sub.add_parser("score", help="accuracy report for a labelled eval CSV")
     sc.add_argument("csv", type=Path)
     sub.add_parser("once", help="label new mail once")
@@ -41,9 +42,12 @@ def main(argv: list[str] | None = None) -> int:
         print(score_csv(args.csv))
         return 0
 
-    cfg = load_config(APP_DIR / "config")
+    for noisy in ("googleapiclient", "httpx", "urllib3"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+    token = APP_DIR / "secrets" / "token.json"
     try:
-        gmail = GmailClient.from_token(APP_DIR / "secrets" / "token.json", read_only=args.cmd == "eval")
+        cfg = load_config(APP_DIR / "config")
+        gmail = GmailClient.from_token(token, read_only=args.cmd == "eval")
         classifier = Classifier(cfg, load_router())
         if args.cmd == "eval":
             out = APP_DIR / "data" / f"eval-{time.strftime('%Y%m%d-%H%M%S')}.csv"
@@ -57,14 +61,23 @@ def main(argv: list[str] | None = None) -> int:
             while True:
                 try:
                     log.info("done: %s", run_once(gmail, store, cfg, classifier))
-                except (AuthError, RefreshError):
-                    raise
+                    time.sleep(cfg.interval_minutes * 60)
+                except (AuthError, RefreshError) as exc:
+                    log.critical("Gmail auth problem: %s; re-run auth.py on the host", exc)
+                    time.sleep(3600)
+                    gmail = GmailClient.from_token(token)
                 except Exception:
                     log.exception("cycle failed; retrying next interval")
-                time.sleep(cfg.interval_minutes * 60)
+                    time.sleep(cfg.interval_minutes * 60)
+    except KeyboardInterrupt:
+        log.info("interrupted; exiting")
+        return 0
     except (AuthError, RefreshError) as exc:
         log.error("Gmail auth problem: %s", exc)
         return 2
+    except Exception:
+        log.exception("fatal error")
+        return 1
 
 
 if __name__ == "__main__":
