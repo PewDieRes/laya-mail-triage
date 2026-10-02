@@ -1,0 +1,7 @@
+secrets/
+data/
+config/vip.txt
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc

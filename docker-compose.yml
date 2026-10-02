@@ -1,0 +1,14 @@
+services:
+  triage:
+    build: .
+    platform: linux/amd64
+    restart: unless-stopped
+    mem_limit: 4g
+    volumes:
+      - ./secrets:/app/secrets
+      - ./config:/app/config:ro
+      - ./data:/app/data
+      - hf-cache:/root/.cache/huggingface
+
+volumes:
+  hf-cache:

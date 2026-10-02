@@ -1,0 +1,3 @@
+-r requirements-base.txt
+google-auth-oauthlib>=1.1
+pytest>=8.0

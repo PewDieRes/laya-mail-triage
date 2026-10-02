@@ -1,0 +1,4 @@
+# Copy to config/vip.txt (gitignored). One entry per line.
+# Exact address, or @domain for everyone at that domain.
+mom@example.com
+@family-domain.org

@@ -1,0 +1,51 @@
+interval_minutes: 5
+
+type_question: "What kind of email is this?"
+types:
+  personal:
+    label: "Laya/Personal"
+    criteria: "personally written by friends or family; casual conversation, not about jobs"
+  career:
+    label: "Laya/Career"
+    criteria: "jobs, recruiters, HR outreach, interviews, applications, freelance offers"
+  finance:
+    label: "Laya/Finance"
+    criteria: "banks, credit cards, UPI, statements, bills, tax, insurance"
+  security:
+    label: "Laya/Security"
+    criteria: "OTP, verification code, login alert, password reset, account change"
+  travel:
+    label: "Laya/Travel & Events"
+    criteria: "flights, trains, hotels, cabs, tickets, bookings, event passes"
+  orders:
+    label: "Laya/Orders"
+    criteria: "shop or merchant purchases, order receipts, shipping, delivery, returns"
+  updates:
+    label: "Laya/Updates"
+    criteria: "automated app, service or social notifications, product or policy changes"
+  newsletters:
+    label: "Laya/Newsletters"
+    criteria: "subscribed content, blogs, digests, editorial articles"
+  promotions:
+    label: "Laya/Promotions"
+    criteria: "sales, offers, discounts, marketing, limited-time deals"
+  suspicious:
+    label: "Laya/Suspicious"
+    criteria: "phishing, scam, fake prize, urgent request for password or payment"
+
+no_priority_types: [promotions, newsletters, suspicious]
+
+needs_action_question: "Does this email ask the recipient to reply, pay, confirm, or do something?"
+urgency_question: "How time-sensitive is this email?"
+urgency_levels: ["no deadline", "this month", "this week", "today", "immediately"]
+
+priority_labels:
+  act_now: "Laya/!Act Now"
+  this_week: "Laya/!This Week"
+  unsure: "Laya/?Unsure"
+
+thresholds:
+  type_conf: 0.55
+  needs_action: 0.6
+  urgency_act_now: 2.5
+  urgency_this_week: 1.5
