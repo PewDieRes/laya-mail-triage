@@ -63,3 +63,21 @@ def test_vip_with_single_failure_gets_no_boost():
     hits = apply_rules(f, VIP)
     assert hits.vip is False
     assert "vip_unverified" in hits.names
+
+
+def test_spf_pass_on_other_domain_not_verified():
+    f = make_features(from_email="boss@example.com",
+                      auth=Auth(spf="pass", spf_domain="other.net", dkim="none", dmarc="none"))
+    assert apply_rules(f, VIP) == RuleHits(forced_type=None, vip=False, names=("vip_unverified",))
+
+
+def test_dkim_pass_aligned_subdomain_is_verified():
+    f = make_features(from_email="boss@example.com",
+                      auth=Auth(spf="none", dkim="pass", dkim_domains=("mail.example.com",), dmarc="none"))
+    assert apply_rules(f, VIP) == RuleHits(forced_type=None, vip=True, names=("vip",))
+
+
+def test_reply_to_mismatch_with_unaligned_spf_is_suspicious():
+    f = make_features(reply_to_domain="evil.example",
+                      auth=Auth(spf="pass", spf_domain="other.net", dkim="none", dmarc="none"))
+    assert apply_rules(f, VIP).forced_type == "suspicious"

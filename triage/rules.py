@@ -30,11 +30,11 @@ def apply_rules(f: Features, vip: frozenset[str]) -> RuleHits:
     if f.auth.dmarc == "fail" or (f.auth.spf == "fail" and f.auth.dkim == "fail"):
         names.append("auth_fail")
         forced_type = SUSPICIOUS
-    if f.reply_to_domain and f.reply_to_domain != f.from_domain and not f.auth.verified:
+    if f.reply_to_domain and f.reply_to_domain != f.from_domain and not f.verified:
         names.append("reply_to_mismatch")
         forced_type = SUSPICIOUS
     vip_hit = False
     if is_vip(f.from_email, vip):
-        vip_hit = f.auth.verified
+        vip_hit = f.verified
         names.append("vip" if vip_hit else "vip_unverified")
     return RuleHits(forced_type=forced_type, vip=vip_hit, names=tuple(names))
