@@ -3,3 +3,4 @@ google-auth>=2.23
 beautifulsoup4>=4.12
 PyYAML>=6.0
 requests>=2.31
+tzdata>=2024.1

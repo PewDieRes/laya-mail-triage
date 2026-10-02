@@ -79,8 +79,10 @@ def _mark_failure(store: Store, msg_id: str, counts: dict) -> None:
 
 
 def run_once(gmail, store: Store, cfg: Config, classifier: Classifier, now: int | None = None,
-             latest: int | None = None) -> dict:
-    """One labelling pass. `latest` labels the newest N inbox emails instead of the time window."""
+             latest: int | None = None, query: str | None = None) -> dict:
+    """One labelling pass over mail since the last run, or a backfill: the newest `latest`
+    inbox emails, or every email matching `query`. A backfill leaves the live position alone."""
+    backfill = bool(latest or query)
     now = int(time.time()) if now is None else now
     run_id = uuid.uuid4().hex[:8]
     label_map = gmail.ensure_labels(cfg.all_label_names())
@@ -92,8 +94,12 @@ def run_once(gmail, store: Store, cfg: Config, classifier: Classifier, now: int 
 
     retry_ids = store.retry_ids()
     retry_set = set(retry_ids)
-    listed = (gmail.list_ids("in:inbox", limit=latest) if latest
-              else gmail.list_ids(build_query(store.get_last_run(), now)))
+    if query:
+        listed = gmail.list_ids(query)
+    elif latest:
+        listed = gmail.list_ids("in:inbox", limit=latest)
+    else:
+        listed = gmail.list_ids(build_query(store.get_last_run(), now))
     candidates = dict.fromkeys(listed + retry_ids)
     for msg_id in candidates:
         if store.is_done(msg_id):
@@ -158,6 +164,6 @@ def run_once(gmail, store: Store, cfg: Config, classifier: Classifier, now: int 
             for msg_id in msg_ids:
                 _mark_failure(store, msg_id, counts)
 
-    if not aborted:
+    if not aborted and not backfill:
         store.set_last_run(now)
     return {**counts, "aborted": aborted}

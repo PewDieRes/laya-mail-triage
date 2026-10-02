@@ -308,3 +308,11 @@ def test_latest_lists_newest_inbox_mail(store, cfg):
     counts = run_once(gmail, store, cfg, Classifier(cfg, FakeModel(type_="finance")), now=NOW, latest=2)
     assert gmail.queries == ["in:inbox"]
     assert counts["labelled"] == 2 and gmail.added == [(["m1", "m2"], ["id:Laya/Finance"])]
+
+
+def test_range_backfill_uses_query_and_keeps_live_position(store, cfg):
+    gmail = FakeGmail({"m1": bank_msg("m1")})
+    store.set_last_run(NOW - 600)
+    run_once(gmail, store, cfg, Classifier(cfg, FakeModel()), now=NOW, query="in:inbox after:1 before:2")
+    assert gmail.queries == ["in:inbox after:1 before:2"]
+    assert store.get_last_run() == NOW - 600
