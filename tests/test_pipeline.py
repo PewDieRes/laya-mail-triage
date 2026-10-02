@@ -301,3 +301,10 @@ def test_priority_disabled_asks_no_action_question(cfg):
                            Classifier(cfg, model))
     assert len(model.calls) == 1 and "type" in model.calls[0][1]
     assert out.decision.priority is None
+
+
+def test_latest_lists_newest_inbox_mail(store, cfg):
+    gmail = FakeGmail({"m1": bank_msg("m1"), "m2": bank_msg("m2"), "m3": bank_msg("m3")})
+    counts = run_once(gmail, store, cfg, Classifier(cfg, FakeModel(type_="finance")), now=NOW, latest=2)
+    assert gmail.queries == ["in:inbox"]
+    assert counts["labelled"] == 2 and gmail.added == [(["m1", "m2"], ["id:Laya/Finance"])]

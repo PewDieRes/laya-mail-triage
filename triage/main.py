@@ -30,7 +30,8 @@ def build_parser() -> argparse.ArgumentParser:
                          "(--limit is ignored with --from)")
     sc = sub.add_parser("score", help="accuracy report for a labelled eval CSV")
     sc.add_argument("csv", type=Path)
-    sub.add_parser("once", help="label new mail once")
+    once = sub.add_parser("once", help="label new mail once")
+    once.add_argument("--latest", type=int, help="label the newest N inbox emails instead of mail since the last run")
     sub.add_parser("run", help="label new mail every interval_minutes")
     return parser
 
@@ -72,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         with Store(APP_DIR / "data" / "state.db") as store:
             if args.cmd == "once":
-                log.info("done: %s", run_once(gmail, store, cfg, classifier))
+                log.info("done: %s", run_once(gmail, store, cfg, classifier, latest=args.latest))
                 return 0
             while True:
                 if gmail is None:
