@@ -75,13 +75,16 @@ def run_once(gmail, store: Store, cfg: Config, classifier: Classifier, now: int 
     groups: dict[tuple[str, ...], list[Outcome]] = defaultdict(list)
     counts = {"labelled": 0, "skipped": 0, "errors": 0, "failed": 0}
     failures: list[str] = []
-    attempted = 0
+    new_attempted = 0
 
-    candidates = dict.fromkeys(gmail.list_ids(build_query(store.get_last_run(), now)) + store.retry_ids())
+    retry_ids = store.retry_ids()
+    retry_set = set(retry_ids)
+    candidates = dict.fromkeys(gmail.list_ids(build_query(store.get_last_run(), now)) + retry_ids)
     for msg_id in candidates:
         if store.is_done(msg_id):
             continue
-        attempted += 1
+        if msg_id not in retry_set:
+            new_attempted += 1
         try:
             raw = gmail.get(msg_id)
             if should_skip(raw, laya_label_ids):
@@ -103,14 +106,18 @@ def run_once(gmail, store: Store, cfg: Config, classifier: Classifier, now: int 
             log.exception("failed on %s", msg_id)
             failures.append(msg_id)
 
-    aborted = len(failures) >= BREAKER_MIN_ERRORS and len(failures) * 2 > attempted
+    # The breaker judges only new candidates; messages already in retry always get their bump.
+    new_failures = [m for m in failures if m not in retry_set]
+    aborted = len(new_failures) >= BREAKER_MIN_ERRORS and len(new_failures) * 2 > new_attempted
     if aborted:
-        log.warning("circuit breaker: %d/%d failed, aborting pass", len(failures), attempted)
-        counts["errors"] += len(failures)
-    else:
-        for msg_id in failures:
+        log.warning("circuit breaker: %d/%d failed, aborting pass", len(new_failures), new_attempted)
+    for msg_id in failures:
+        if aborted and msg_id not in retry_set:
+            counts["errors"] += 1
+        else:
             _mark_failure(store, msg_id, counts)
 
+    failed_groups: list[tuple[tuple[str, ...], list[str]]] = []
     for names, outcomes in groups.items():
         msg_ids = [o.features.msg_id for o in outcomes]
         try:
@@ -119,13 +126,22 @@ def run_once(gmail, store: Store, cfg: Config, classifier: Classifier, now: int 
             raise
         except Exception:
             log.exception("add_labels failed for %s", ", ".join(names))
-            for msg_id in msg_ids:
-                _mark_failure(store, msg_id, counts)
+            failed_groups.append((names, msg_ids))
             continue
         for o in outcomes:
             store.log_prediction(run_id, o.features, o.laya, o.hits, list(names))
             store.mark(o.features.msg_id, "ok", list(names))
         counts["labelled"] += len(msg_ids)
+
+    if failed_groups and len(failed_groups) == len(groups):
+        log.warning("add_labels failed for every group (%d); treating as a Gmail outage, "
+                    "attempts not bumped", len(groups))
+        counts["errors"] += sum(len(ids) for _, ids in failed_groups)
+        aborted = True
+    else:
+        for _, msg_ids in failed_groups:
+            for msg_id in msg_ids:
+                _mark_failure(store, msg_id, counts)
 
     if not aborted:
         store.set_last_run(now)

@@ -89,12 +89,32 @@ def test_csv_fields_order():
 
 
 def test_csv_formula_injection_is_neutralised(tmp_path, cfg):
-    msg = make_msg("m1", headers={"From": "=evil <a@example.com>", "Subject": '=HYPERLINK("x")'}, plain="hi")
+    msg = make_msg("m1", headers={"From": "=cmd@evil.example", "Subject": '=HYPERLINK("x")'}, plain="hi")
     out = tmp_path / "e.csv"
     run_eval(FakeGmail({"m1": msg}), cfg, Classifier(cfg, FakeModel()), out)
     row = read_rows(out)[0]
     assert row["subject"] == "'=HYPERLINK(\"x\")"
-    assert not row["from"].startswith("=")
+    assert row["from"] == "'=cmd@evil.example"
+
+
+def test_fallback_row_neutralises_formulas(tmp_path, cfg):
+    first = tmp_path / "first.csv"
+    with first.open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=CSV_FIELDS)
+        w.writeheader()
+        w.writerow({**dict.fromkeys(CSV_FIELDS, ""), "msg_id": "m1", "from": "=a@b.c",
+                    "subject": "+SUM(1)", "true_type": "finance", "true_priority": "none"})
+    second = tmp_path / "second.csv"
+    run_eval(FakeGmail({"m1": RuntimeError("boom")}), cfg, Classifier(cfg, FakeModel()), second,
+             from_csv=first)
+    row = read_rows(second)[0]
+    assert row["from"] == "'=a@b.c" and row["subject"] == "'+SUM(1)"
+
+
+def test_sweep_counts_blank_rows_as_misses():
+    rows = [srow("act_now", "0.80", "3.00", "act_now"), srow("act_now", "", "")]
+    report = score_rows(rows)
+    assert "needs_action>=0.5 urgency>=2.5: precision 1/1 = 100.0% recall 1/2 = 50.0%" in report
 
 
 def test_outcome_row_blank_for_none_priority_values(cfg):

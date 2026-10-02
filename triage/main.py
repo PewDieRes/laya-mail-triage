@@ -35,6 +35,19 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+AUTH_RETRY_SECONDS = 3600
+
+
+def _connect_forever(token: Path) -> GmailClient:
+    """run mode only: a bad token must never exit (Docker would restart-loop); wait and retry."""
+    while True:
+        try:
+            return GmailClient.from_token(token, read_only=False)
+        except (AuthError, RefreshError) as exc:
+            log.critical("Gmail auth problem: %s; re-run auth.py on the host", exc)
+            time.sleep(AUTH_RETRY_SECONDS)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -47,7 +60,8 @@ def main(argv: list[str] | None = None) -> int:
     token = APP_DIR / "secrets" / "token.json"
     try:
         cfg = load_config(APP_DIR / "config")
-        gmail = GmailClient.from_token(token, read_only=args.cmd == "eval")
+        gmail = (_connect_forever(token) if args.cmd == "run"
+                 else GmailClient.from_token(token, read_only=args.cmd == "eval"))
         classifier = Classifier(cfg, load_router())
         if args.cmd == "eval":
             out = APP_DIR / "data" / f"eval-{time.strftime('%Y%m%d-%H%M%S')}.csv"
@@ -64,8 +78,8 @@ def main(argv: list[str] | None = None) -> int:
                     time.sleep(cfg.interval_minutes * 60)
                 except (AuthError, RefreshError) as exc:
                     log.critical("Gmail auth problem: %s; re-run auth.py on the host", exc)
-                    time.sleep(3600)
-                    gmail = GmailClient.from_token(token)
+                    time.sleep(AUTH_RETRY_SECONDS)
+                    gmail = _connect_forever(token)
                 except Exception:
                     log.exception("cycle failed; retrying next interval")
                     time.sleep(cfg.interval_minutes * 60)

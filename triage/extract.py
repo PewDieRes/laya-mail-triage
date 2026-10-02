@@ -149,9 +149,9 @@ def parse_auth(values: list[str]) -> Auth:
     spf_domain = ""
     dkim_results: list[str] = []
     dkim_domains: list[str] = []
-    for value in values:
-        if value.split(";", 1)[0].strip().lower() != TRUSTED_AUTHSERV:
-            continue
+    trusted = [v for v in values if v.split(";", 1)[0].strip().lower() == TRUSTED_AUTHSERV]
+    # Gmail prepends its own header, so only the topmost one is trustworthy.
+    for value in trusted[:1]:
         for segment in value.split(";")[1:]:
             match = _AUTH_RE.match(segment)
             if not match:
@@ -214,11 +214,18 @@ def _yes_no(flag: bool) -> str:
     return "yes" if flag else "no"
 
 
+def _one_line(text: str) -> str:
+    """Collapse line breaks and invisible format chars so a header can't forge extra state lines."""
+    text = "".join(" " if ch in "\r\n" or unicodedata.category(ch) == "Cf" else ch for ch in text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def to_state(f: Features) -> str:
-    sender = f"{f.from_name} <{f.from_email}>" if f.from_name else f.from_email
+    name = _one_line(f.from_name)
+    sender = f"{name} <{f.from_email}>" if name else f.from_email
     return (
         f"From: {sender}\n"
-        f"Subject: {f.subject}\n"
+        f"Subject: {_one_line(f.subject)}\n"
         f"Sender verified: {_yes_no(f.verified)}\n"
         f"Bulk sender: {_yes_no(f.is_bulk)}\n"
         f"Body: {f.body}"

@@ -59,6 +59,7 @@ def _read_rows(path: Path) -> list[dict]:
 
 def _fallback_row(prior_row: dict) -> dict[str, str]:
     row = {k: prior_row.get(k, "") or "" for k in CSV_FIELDS}
+    row["from"], row["subject"] = _safe(row["from"]), _safe(row["subject"])
     row["pred_type"] = "ERROR"
     return row
 
@@ -137,16 +138,18 @@ def _tuning_lines(rows: list[dict], labelled: list[dict]) -> list[str]:
                     if (v := _f(r.get(col, ""))) is not None]
             lines.append(f"  {prio}: {_dist(vals)} (n={len(vals)})" if vals else f"  {prio}: no values")
 
-    pts = [(na, ur, r["true_priority"].strip() == "act_now") for r in rows
-           if r.get("true_priority", "").strip()
-           and (na := _f(r.get("needs_action", ""))) is not None
-           and (ur := _f(r.get("urgency", ""))) is not None]
+    # Blank needs_action/urgency (skipped by D3) means "not predicted act_now"; keep the row so
+    # a true act_now there counts as a miss.
+    pts = [(_f(r.get("needs_action", "")), _f(r.get("urgency", "")),
+            r["true_priority"].strip() == "act_now")
+           for r in rows if r.get("true_priority", "").strip()]
     lines.append("act_now precision/recall sweep:")
     total_pos = sum(p for _, _, p in pts)
     best: tuple[float, float, float] | None = None
     for na_t in (0.3, 0.4, 0.5, 0.6, 0.7):
         for ur_t in (1.5, 2.0, 2.5, 3.0):
-            pred = [p for na, ur, p in pts if na >= na_t and ur >= ur_t]
+            pred = [p for na, ur, p in pts
+                    if na is not None and ur is not None and na >= na_t and ur >= ur_t]
             tp = sum(pred)
             prec = tp / len(pred) if pred else 0.0
             rec = tp / total_pos if total_pos else 0.0

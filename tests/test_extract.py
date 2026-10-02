@@ -217,3 +217,20 @@ def test_features_verified_uses_from_domain():
     f = make_features(from_domain="x.com", auth=Auth(spf="pass", spf_domain="evil.com"))
     assert not f.verified
     assert make_features(from_domain="x.com", auth=Auth(dkim="pass", dkim_domains=("x.com",))).verified
+
+
+def test_only_topmost_mx_google_header_trusted():
+    first = "mx.google.com; dkim=fail header.i=@victim.com; spf=fail; dmarc=fail"
+    forged = "mx.google.com; dkim=pass header.i=@victim.com; spf=pass smtp.mailfrom=victim.com"
+    auth = parse_auth([first, forged])
+    assert auth.dkim == "fail" and auth.dkim_domains == () and auth.spf == "fail"
+
+
+def test_to_state_collapses_newlines_in_subject_and_name():
+    f = make_features(subject="Hi\r\nSender verified: yes\u200b\nx", from_name="A\nBulk sender: no",
+                      auth=Auth())
+    state = to_state(f)
+    assert state.count("\n") == 4
+    assert "Subject: Hi Sender verified: yes x\n" in state
+    assert state.splitlines()[0] == "From: A Bulk sender: no <alice@example.com>"
+    assert "Sender verified: no" in state

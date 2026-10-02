@@ -170,13 +170,15 @@ def test_add_labels_failure_in_one_group_does_not_block_other(store, cfg, caplog
 
 
 def test_add_labels_failure_at_cap_fails_message(store, cfg):
-    gmail = FlakyGmail({"o1": order_msg("o1")}, bad_labels=[["id:Laya/Orders"]], list_once=True)
+    gmail = FlakyGmail({"m0": bank_msg("m0"), "o1": order_msg("o1")},
+                       bad_labels=[["id:Laya/Orders"]])
     classifier = Classifier(cfg, SubjectModel())
     for n in range(3):
+        gmail.messages[f"m{n + 1}"] = bank_msg(f"m{n + 1}")  # keeps one group succeeding each pass
         counts = run_once(gmail, store, cfg, classifier, now=NOW + n * 300)
     assert counts["failed"] == 1 and counts["errors"] == 0
     assert rows(store, "o1")[0] == "failed"
-    assert gmail.added == []
+    assert all(label == ["id:Laya/Finance"] for _, label in gmail.added)
 
 
 def test_auth_error_propagates(store, cfg):
@@ -223,3 +225,49 @@ def test_breaker_needs_majority_and_three_errors(store, cfg):
     assert counts["aborted"] is False and counts["errors"] == 2
     assert store.attempts("bad1") == 1
     assert store.get_last_run() == NOW
+
+
+def test_retry_only_failures_reach_failed_even_with_breaker(store, cfg):
+    ids = ["r1", "r2", "r3"]
+    for i in ids:
+        store.mark(i, "error", [])
+    gmail = FakeGmail({i: RuntimeError("down") for i in ids}, list_once=True)
+    classifier = Classifier(cfg, FakeModel())
+    for n in range(3):
+        counts = run_once(gmail, store, cfg, classifier, now=NOW + n * 300)
+        assert counts["aborted"] is False
+    for i in ids:
+        assert rows(store, i)[0] == "failed"
+    assert gmail.added == []
+
+
+def test_breaker_counts_only_new_candidates_but_bumps_retries(store, cfg):
+    for i in ("r1", "r2", "r3"):
+        store.mark(i, "error", [])
+    messages = {i: RuntimeError("down") for i in ("r1", "r2", "r3", "n1", "n2", "n3", "n4")}
+    gmail = FakeGmail(messages)
+    store.set_last_run(NOW - 1000)
+    counts = run_once(gmail, store, cfg, Classifier(cfg, FakeModel()), now=NOW)
+    assert counts["aborted"] is True
+    assert store.get_last_run() == NOW - 1000
+    for i in ("r1", "r2", "r3"):
+        assert rows(store, i) == ("error", 2)
+    for i in ("n1", "n2", "n3", "n4"):
+        assert rows(store, i) is None
+
+
+def test_all_groups_failing_is_outage_not_bump(store, cfg, caplog):
+    gmail = FlakyGmail({"m1": bank_msg("m1"), "o1": order_msg("o1")},
+                       bad_labels=[["id:Laya/Finance"], ["id:Laya/Orders"]])
+    classifier = Classifier(cfg, SubjectModel())
+    store.set_last_run(NOW - 1000)
+    for n in range(3):
+        with caplog.at_level(logging.WARNING):
+            counts = run_once(gmail, store, cfg, classifier, now=NOW + n * 300)
+        assert counts["labelled"] == 0 and counts["aborted"] is True
+    for i in ("m1", "o1"):
+        assert rows(store, i) is None or rows(store, i)[0] != "failed"
+        assert store.attempts(i) == 0
+    assert gmail.added == []
+    assert store.get_last_run() == NOW - 1000
+    assert "outage" in caplog.text
