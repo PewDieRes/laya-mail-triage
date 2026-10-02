@@ -1,0 +1,71 @@
+"""CLI: eval | score | once | run."""
+from __future__ import annotations
+
+import argparse
+import logging
+import sys
+import time
+from pathlib import Path
+
+from google.auth.exceptions import RefreshError
+
+from triage.classifier import Classifier, load_router
+from triage.config import load_config
+from triage.evaluate import run_eval, score_csv
+from triage.gmail_client import AuthError, GmailClient
+from triage.pipeline import run_once
+from triage.store import Store
+
+APP_DIR = Path(__file__).resolve().parent.parent
+log = logging.getLogger("triage")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="triage")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    ev = sub.add_parser("eval", help="read-only: classify inbox mail into data/eval-*.csv")
+    ev.add_argument("--limit", type=int, default=500)
+    ev.add_argument("--from", dest="from_csv", type=Path,
+                    help="re-classify the emails in a labelled CSV, keeping true_* columns")
+    sc = sub.add_parser("score", help="accuracy report for a labelled eval CSV")
+    sc.add_argument("csv", type=Path)
+    sub.add_parser("once", help="label new mail once")
+    sub.add_parser("run", help="label new mail every interval_minutes")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    if args.cmd == "score":
+        print(score_csv(args.csv))
+        return 0
+
+    cfg = load_config(APP_DIR / "config")
+    try:
+        gmail = GmailClient.from_token(APP_DIR / "secrets" / "token.json", read_only=args.cmd == "eval")
+        classifier = Classifier(cfg, load_router())
+        if args.cmd == "eval":
+            out = APP_DIR / "data" / f"eval-{time.strftime('%Y%m%d-%H%M%S')}.csv"
+            n = run_eval(gmail, cfg, classifier, out, limit=args.limit, from_csv=args.from_csv)
+            print(f"Wrote {n} rows to {out.relative_to(APP_DIR)}")
+            return 0
+        with Store(APP_DIR / "data" / "state.db") as store:
+            if args.cmd == "once":
+                log.info("done: %s", run_once(gmail, store, cfg, classifier))
+                return 0
+            while True:
+                try:
+                    log.info("done: %s", run_once(gmail, store, cfg, classifier))
+                except (AuthError, RefreshError):
+                    raise
+                except Exception:
+                    log.exception("cycle failed; retrying next interval")
+                time.sleep(cfg.interval_minutes * 60)
+    except (AuthError, RefreshError) as exc:
+        log.error("Gmail auth problem: %s", exc)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
