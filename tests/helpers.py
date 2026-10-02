@@ -60,8 +60,9 @@ class FakeModel:
         self.probs = probs
         self.calls = []
 
-    def predict(self, state, questions):
+    def predict(self, state, questions, **kwargs):
         self.calls.append((state, questions))
+        self.kwargs = kwargs
         answers = {}
         if "type" in questions:
             answers["type"] = {
@@ -105,6 +106,12 @@ class FakeGmail:
             raise msg
         return msg
 
+    def get_label_ids(self, msg_id):
+        msg = self.messages[msg_id]
+        if isinstance(msg, Exception):
+            raise msg
+        return msg.get("labelIds", [])
+
     def ensure_labels(self, names):
         for name in names:
             self.label_ids.setdefault(name, f"id:{name}")
@@ -121,3 +128,18 @@ def bank_msg(msg_id):
                  "Authentication-Results": "mx.google.com; dkim=pass; spf=pass; dmarc=pass"},
         plain="Your statement is ready",
     )
+
+
+class FakePriorityModel(FakeModel):
+    """FakeModel that also answers a priority choice question."""
+
+    def __init__(self, priority="none", **kwargs):
+        super().__init__(**kwargs)
+        self.priority = priority
+
+    def predict(self, state, questions, **kwargs):
+        result = super().predict(state, questions, **kwargs)
+        if "priority" in questions:
+            result["answers"]["priority"] = {"choice": self.priority, "answer_confidence": 0.9,
+                                             "probabilities": {self.priority: 0.9}}
+        return result

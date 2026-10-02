@@ -28,6 +28,15 @@ class Config:
     priority_labels: dict[str, str]
     thresholds: Thresholds
     vip: frozenset[str]
+    # Optional: when set, priority is one Laya choice (act_now/this_week/none) instead of
+    # the needs_action + urgency scores and their thresholds.
+    priority_question: str | None = None
+    priority_criteria: dict[str, str] | None = None
+    # Optional hierarchy: group -> (criteria, member types). When set, Laya picks a group and,
+    # in the same call, a member within each multi-member group.
+    type_groups: dict[str, tuple[str, tuple[str, ...]]] | None = None
+    head_max_len: int | None = None  # Laya option-text token budget per call (model default 192)
+    body_limit: int | None = None  # characters of body passed to Laya (default: extract.BODY_LIMIT)
 
     def all_label_names(self) -> list[str]:
         return list(self.type_labels.values()) + list(self.priority_labels.values())
@@ -64,4 +73,27 @@ def load_config(config_dir: Path) -> Config:
         priority_labels=dict(raw["priority_labels"]),
         thresholds=Thresholds(**raw["thresholds"]),
         vip=load_vip(config_dir / "vip.txt"),
+        priority_question=raw.get("priority_question"),
+        priority_criteria=_priority_criteria(raw.get("priority_criteria")),
+        type_groups=_type_groups(raw.get("type_groups"), set(types)),
+        head_max_len=raw.get("head_max_len"),
+        body_limit=raw.get("body_limit"),
     )
+
+
+def _priority_criteria(raw: dict | None) -> dict[str, str] | None:
+    if raw is None:
+        return None
+    if set(raw) != {"act_now", "this_week", "none"}:
+        raise ValueError("priority_criteria must have exactly act_now, this_week and none")
+    return dict(raw)
+
+
+def _type_groups(raw: dict | None, types: set[str]) -> dict[str, tuple[str, tuple[str, ...]]] | None:
+    if raw is None:
+        return None
+    groups = {name: (spec["criteria"], tuple(spec["members"])) for name, spec in raw.items()}
+    members = [m for _, ms in groups.values() for m in ms]
+    if sorted(members) != sorted(types):
+        raise ValueError("type_groups members must list every type exactly once")
+    return groups

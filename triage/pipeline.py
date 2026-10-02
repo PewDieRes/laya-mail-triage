@@ -6,6 +6,7 @@ import time
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import Callable
 
 from google.auth.exceptions import RefreshError
 from googleapiclient.errors import HttpError
@@ -15,12 +16,13 @@ from triage.config import Config
 from triage.decide import Decision, decide
 from triage.extract import Features, parse_message, to_state
 from triage.gmail_client import AuthError
-from triage.rules import RuleHits, apply_rules
+from triage.rules import SUSPICIOUS, RuleHits, apply_rules
 from triage.store import Store
 
 log = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3
+LEARN_WINDOW_SECONDS = 3 * 86400  # how far back to look for the owner's label corrections
 OVERLAP_SECONDS = 3600
 FIRST_RUN_LOOKBACK_SECONDS = 86400
 BREAKER_MIN_ERRORS = 3
@@ -35,11 +37,20 @@ class Outcome:
     decision: Decision
 
 
-def classify_message(raw: dict, cfg: Config, classifier: Classifier) -> Outcome:
+def classify_message(raw: dict, cfg: Config, classifier: Classifier,
+                     recall: Callable[[str], str | None] | None = None) -> Outcome:
+    """Auth rules first, then the owner's remembered type for this sender, then Laya."""
     features = parse_message(raw)
     hits = apply_rules(features, cfg.vip)
-    laya = classifier.classify(to_state(features), skip_type=hits.forced_type is not None,
-                                skip_action_types=cfg.no_priority_types)
+    known = recall(features.from_email) if recall and hits.forced_type is None else None
+    if known not in cfg.type_criteria:
+        known = None
+    # Laya cannot tell phishing from text (banks quote anti-scam warnings), so a
+    # verified sender is never offered "suspicious"; the auth rules handle spoofing.
+    exclude = frozenset({SUSPICIOUS}) if features.verified else frozenset()
+    laya = classifier.classify(to_state(features, cfg.body_limit), skip_type=hits.forced_type is not None,
+                                skip_action_types=cfg.no_priority_types, exclude_types=exclude,
+                                known_type=known)
     return Outcome(features, hits, laya, decide(laya, hits, cfg))
 
 
@@ -67,11 +78,43 @@ def _mark_failure(store: Store, msg_id: str, counts: dict) -> None:
         counts["errors"] += 1
 
 
+def learn_corrections(gmail, store: Store, cfg: Config, label_map: dict[str, str], now: int) -> int:
+    """Remember a sender's type when the owner swapped the Laya type label we applied."""
+    type_by_label_id = {label_map[name]: t for t, name in cfg.type_labels.items() if name in label_map}
+    type_by_label_name = {name: t for t, name in cfg.type_labels.items()}
+    learned = 0
+    for msg_id, sender, applied in store.recent_labelled(now - LEARN_WINDOW_SECONDS):
+        applied_types = {type_by_label_name[n] for n in applied if n in type_by_label_name}
+        try:
+            current = gmail.get_label_ids(msg_id)
+        except (AuthError, RefreshError):
+            raise
+        except Exception:
+            log.debug("could not read labels of %s", msg_id, exc_info=True)
+            continue
+        added = {type_by_label_id[i] for i in current if i in type_by_label_id} - applied_types
+        if len(added) == 1 and sender:
+            new_type = added.pop()
+            store.remember_sender(sender, new_type)
+            store.set_labels(msg_id, [n for n in applied if n not in type_by_label_name]
+                             + [cfg.type_labels[new_type]])
+            log.info("learned: %s -> %s", sender, new_type)
+            learned += 1
+    return learned
+
+
 def run_once(gmail, store: Store, cfg: Config, classifier: Classifier, now: int | None = None) -> dict:
     now = int(time.time()) if now is None else now
     run_id = uuid.uuid4().hex[:8]
     label_map = gmail.ensure_labels(cfg.all_label_names())
     laya_label_ids = set(label_map.values())
+    try:
+        learned = learn_corrections(gmail, store, cfg, label_map, now)
+    except (AuthError, RefreshError):
+        raise
+    except Exception:
+        log.exception("learning from label corrections failed; continuing")
+        learned = 0
     groups: dict[tuple[str, ...], list[Outcome]] = defaultdict(list)
     counts = {"labelled": 0, "skipped": 0, "errors": 0, "failed": 0}
     failures: list[str] = []
@@ -91,7 +134,7 @@ def run_once(gmail, store: Store, cfg: Config, classifier: Classifier, now: int 
                 store.mark(msg_id, "skipped", [])
                 counts["skipped"] += 1
                 continue
-            outcome = classify_message(raw, cfg, classifier)
+            outcome = classify_message(raw, cfg, classifier, store.recall_sender)
             names = outcome.decision.label_names(cfg)
             groups[tuple(names)].append(outcome)
             log.info("%s -> %s (type conf %.2f)", msg_id, ", ".join(names), outcome.laya.type_conf)
@@ -145,4 +188,4 @@ def run_once(gmail, store: Store, cfg: Config, classifier: Classifier, now: int 
 
     if not aborted:
         store.set_last_run(now)
-    return {**counts, "aborted": aborted}
+    return {**counts, "aborted": aborted, "learned": learned}

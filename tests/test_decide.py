@@ -69,3 +69,13 @@ def test_none_scores_mean_no_laya_priority(cfg):
 def test_vip_still_act_now_when_scores_none(cfg):
     laya = make_laya(needs_action=None, urgency=None)
     assert decide(laya, RuleHits(vip=True, names=("vip",)), cfg).priority == "act_now"
+
+
+def test_priority_choice_is_used(cfg):
+    assert decide(make_laya(priority="this_week"), RuleHits(), cfg).priority == "this_week"
+    assert decide(make_laya(priority="none"), RuleHits(), cfg).priority is None
+    assert decide(make_laya(priority="none"), RuleHits(vip=True, names=("vip",)), cfg).priority == "act_now"
+
+
+def test_priority_choice_ignored_for_no_priority_types(cfg):
+    assert decide(make_laya(type="promotions", priority="act_now"), RuleHits(), cfg).priority is None

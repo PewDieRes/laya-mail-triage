@@ -49,3 +49,24 @@ def test_suspicious_type_required(tmp_path):
 
     with pytest.raises(ValueError, match="suspicious"):
         load_config(write_config(tmp_path, drop_suspicious))
+
+
+def test_priority_criteria_must_have_three_keys(tmp_path):
+    def bad(raw):
+        raw["priority_question"] = "q"
+        raw["priority_criteria"] = {"act_now": "a", "none": "n"}
+
+    with pytest.raises(ValueError, match="priority_criteria"):
+        load_config(write_config(tmp_path, bad))
+
+
+def test_priority_criteria_optional():
+    assert load_config(REPO / "config").priority_criteria is None
+
+
+def test_type_groups_must_cover_every_type(tmp_path):
+    def bad(raw):
+        raw["type_groups"] = {"jobs": {"criteria": "work", "members": ["career"]}}
+
+    with pytest.raises(ValueError, match="type_groups"):
+        load_config(write_config(tmp_path, bad))

@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS predictions (
     top2 TEXT, needs_action REAL, urgency REAL, rule_hits TEXT, model TEXT, labels TEXT
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS sender_memory (
+    sender TEXT PRIMARY KEY, type TEXT NOT NULL, updated_at INTEGER NOT NULL
+);
 """
 
 
@@ -71,6 +74,32 @@ class Store:
             (f.msg_id, run_id, f.from_email, f.subject, laya.type, laya.type_conf, json.dumps(laya.top2),
              laya.needs_action, laya.urgency, json.dumps(hits.names), laya.model, json.dumps(labels)),
         )
+        self.db.commit()
+
+    def remember_sender(self, sender: str, type_: str) -> None:
+        self.db.execute(
+            "INSERT INTO sender_memory (sender, type, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(sender) DO UPDATE SET type = excluded.type, updated_at = excluded.updated_at",
+            (sender.lower(), type_, int(time.time())),
+        )
+        self.db.commit()
+
+    def recall_sender(self, sender: str) -> str | None:
+        row = self.db.execute("SELECT type FROM sender_memory WHERE sender = ?", (sender.lower(),)).fetchone()
+        return row[0] if row else None
+
+    def recent_labelled(self, since: int) -> list[tuple[str, str, list[str]]]:
+        """(msg_id, sender, labels we applied) for messages labelled at or after `since`."""
+        rows = self.db.execute(
+            "SELECT p.msg_id, pr.from_email, p.labels FROM processed p "
+            "JOIN predictions pr ON pr.rowid = (SELECT MAX(rowid) FROM predictions WHERE msg_id = p.msg_id) "
+            "WHERE p.status = 'ok' AND p.processed_at >= ? ORDER BY p.processed_at",
+            (since,),
+        )
+        return [(msg_id, sender, json.loads(labels)) for msg_id, sender, labels in rows]
+
+    def set_labels(self, msg_id: str, labels: list[str]) -> None:
+        self.db.execute("UPDATE processed SET labels = ? WHERE msg_id = ?", (json.dumps(labels), msg_id))
         self.db.commit()
 
     def get_last_run(self) -> int | None:

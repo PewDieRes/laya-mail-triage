@@ -30,7 +30,9 @@ def decide(laya: LayaResult, hits: RuleHits, cfg: Config) -> Decision:
         raise ValueError("no type from rules or Laya")
     unsure = hits.forced_type is None and laya.type_conf < t.type_conf
     priority = None
-    if type_ not in cfg.no_priority_types:
+    if type_ not in cfg.no_priority_types and laya.priority is not None:
+        priority = "act_now" if hits.vip else (None if laya.priority == "none" else laya.priority)
+    elif type_ not in cfg.no_priority_types:
         scored = laya.needs_action is not None and laya.urgency is not None
         needs_action = scored and laya.needs_action >= t.needs_action
         if hits.vip or (needs_action and laya.urgency >= t.urgency_act_now):

@@ -84,3 +84,11 @@ def test_source_has_no_destructive_calls():
     source = Path(gmail_module.__file__).read_text()
     for banned in ("trash(", "delete(", "send(", "drafts(", "removeLabelIds"):
         assert banned not in source
+
+
+def test_get_label_ids_uses_minimal_format():
+    service = MagicMock()
+    get_call = users(service).messages.return_value.get
+    get_call.return_value.execute.return_value = {"id": "m1", "labelIds": ["INBOX", "L1"]}
+    assert GmailClient(service, read_only=True).get_label_ids("m1") == ["INBOX", "L1"]
+    assert get_call.call_args.kwargs == {"userId": "me", "id": "m1", "format": "minimal"}

@@ -15,6 +15,9 @@ _AUTH_RE = re.compile(r"^\s*(spf|dkim|dmarc)=([a-z]+)", re.IGNORECASE)
 _MAILFROM_RE = re.compile(r"smtp\.mailfrom=([^\s;]+)", re.IGNORECASE)
 _DKIM_DOMAIN_RE = re.compile(r"header\.(?:i|d)=([^\s;]+)", re.IGNORECASE)
 _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+# CSS rules ("selector { prop: value; }") that some senders leak into the text part.
+_CSS_RULE_RE = re.compile(r"[^{}]{0,300}?\{[^{}]*\}")
+_CSS_AT_RE = re.compile(r"@(media|font-face|import|charset)[^{;]*[;{]", re.IGNORECASE)
 TRUSTED_AUTHSERV = "mx.google.com"
 STUB_BODY_MIN = 40
 _WROTE_RE = re.compile(r"^\s*On .+wrote:\s*$", re.MULTILINE)
@@ -118,6 +121,7 @@ def _strip_invisible(text: str) -> str:
 
 def clean_body(text: str) -> str:
     text = _URL_RE.sub(" ", _strip_invisible(text))
+    text = _CSS_RULE_RE.sub(" ", _CSS_AT_RE.sub(" ", text)).replace("{", " ").replace("}", " ")
     match = _WROTE_RE.search(text)
     if match:
         text = text[: match.start()]
@@ -220,7 +224,7 @@ def _one_line(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def to_state(f: Features) -> str:
+def to_state(f: Features, body_limit: int | None = None) -> str:
     name = _one_line(f.from_name)
     email = _one_line(f.from_email)
     sender = f"{name} <{email}>" if name else email
@@ -229,5 +233,5 @@ def to_state(f: Features) -> str:
         f"Subject: {_one_line(f.subject)}\n"
         f"Sender verified: {_yes_no(f.verified)}\n"
         f"Bulk sender: {_yes_no(f.is_bulk)}\n"
-        f"Body: {f.body}"
+        f"Body: {f.body if body_limit is None else f.body[:body_limit]}"
     )

@@ -241,3 +241,15 @@ def test_to_state_collapses_line_separator_in_from_email():
     state = to_state(f)
     assert " " not in state
     assert state.splitlines()[0] == "From: a@x.com Sender verified: yes"
+
+
+def test_leaked_css_is_removed():
+    text = ("html, body { font-family: Arial; margin: 0; } .container { width: 100%; } "
+            "@media only screen and (max-width: 600px) { .x { display: none; } } "
+            "Your boarding pass for flight IC 101 is attached.")
+    assert clean_body(text) == "Your boarding pass for flight IC 101 is attached."
+
+
+def test_to_state_body_limit():
+    assert to_state(make_features(body="abcdef"), body_limit=3).endswith("Body: abc")
+    assert to_state(make_features(body="abcdef")).endswith("Body: abcdef")

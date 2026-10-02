@@ -88,7 +88,7 @@ def test_classify_message_end_to_end(cfg):
 def test_labels_new_mail_and_records_state(store, cfg):
     gmail = FakeGmail({"m1": bank_msg("m1"), "m2": bank_msg("m2")})
     counts = run_once(gmail, store, cfg, Classifier(cfg, FakeModel(type_="finance")), now=NOW)
-    assert counts == {"labelled": 2, "skipped": 0, "errors": 0, "failed": 0, "aborted": False}
+    assert counts == {"labelled": 2, "skipped": 0, "errors": 0, "failed": 0, "aborted": False, "learned": 0}
     assert gmail.added == [(["m1", "m2"], ["id:Laya/Finance"])]
     assert store.is_done("m1") and store.is_done("m2")
     assert store.get_last_run() == NOW
@@ -109,7 +109,7 @@ def test_skips_spam_trash_and_already_labelled(store, cfg):
         "done": make_msg("done", label_ids=("INBOX", "id:Laya/Orders")),
     })
     counts = run_once(gmail, store, cfg, Classifier(cfg, FakeModel()), now=NOW)
-    assert counts == {"labelled": 0, "skipped": 3, "errors": 0, "failed": 0, "aborted": False}
+    assert counts == {"labelled": 0, "skipped": 3, "errors": 0, "failed": 0, "aborted": False, "learned": 0}
     assert gmail.added == []
 
 
@@ -124,7 +124,7 @@ def test_two_label_groups_in_one_pass(store, cfg):
 def test_bad_message_does_not_block_good_ones(store, cfg):
     gmail = FakeGmail({"bad": RuntimeError("boom"), "m1": bank_msg("m1")})
     counts = run_once(gmail, store, cfg, Classifier(cfg, FakeModel()), now=NOW)
-    assert counts == {"labelled": 1, "skipped": 0, "errors": 1, "failed": 0, "aborted": False}
+    assert counts == {"labelled": 1, "skipped": 0, "errors": 1, "failed": 0, "aborted": False, "learned": 0}
     assert gmail.added == [(["m1"], ["id:Laya/Finance"])]
     assert rows(store, "bad") == ("error", 1)
     assert store.get_last_run() == NOW
@@ -137,7 +137,7 @@ def test_errors_retry_then_fail_unlabelled(store, cfg):
     run_once(gmail, store, cfg, classifier, now=NOW + 300)
     assert rows(store, "bad") == ("error", 2)
     counts = run_once(gmail, store, cfg, classifier, now=NOW + 600)
-    assert counts == {"labelled": 0, "skipped": 0, "errors": 0, "failed": 1, "aborted": False}
+    assert counts == {"labelled": 0, "skipped": 0, "errors": 0, "failed": 1, "aborted": False, "learned": 0}
     assert gmail.added == []
     assert rows(store, "bad")[0] == "failed"
     assert store.is_done("bad") and store.retry_ids() == []
@@ -147,7 +147,7 @@ def test_errors_retry_then_fail_unlabelled(store, cfg):
 def test_gmail_404_is_skipped_without_error(store, cfg):
     gmail = FakeGmail({"gone": http_error(404), "m1": bank_msg("m1")})
     counts = run_once(gmail, store, cfg, Classifier(cfg, FakeModel()), now=NOW)
-    assert counts == {"labelled": 1, "skipped": 1, "errors": 0, "failed": 0, "aborted": False}
+    assert counts == {"labelled": 1, "skipped": 1, "errors": 0, "failed": 0, "aborted": False, "learned": 0}
     assert rows(store, "gone") == ("skipped", 0)
 
 
@@ -162,7 +162,7 @@ def test_add_labels_failure_in_one_group_does_not_block_other(store, cfg, caplog
                        bad_labels=[["id:Laya/Orders"]])
     with caplog.at_level(logging.ERROR):
         counts = run_once(gmail, store, cfg, Classifier(cfg, SubjectModel()), now=NOW)
-    assert counts == {"labelled": 1, "skipped": 0, "errors": 1, "failed": 0, "aborted": False}
+    assert counts == {"labelled": 1, "skipped": 0, "errors": 1, "failed": 0, "aborted": False, "learned": 0}
     assert gmail.added == [(["m1"], ["id:Laya/Finance"])]
     assert rows(store, "o1") == ("error", 1)
     assert rows(store, "m1")[0] == "ok"
@@ -271,3 +271,56 @@ def test_all_groups_failing_is_outage_not_bump(store, cfg, caplog):
     assert gmail.added == []
     assert store.get_last_run() == NOW - 1000
     assert "outage" in caplog.text
+
+
+def test_verified_sender_is_not_offered_suspicious(cfg):
+    model = FakeModel(type_="finance")
+    classify_message(bank_msg("m1"), cfg, Classifier(cfg, model))
+    assert "suspicious" not in model.calls[0][1]["type"]["criteria"]
+
+
+def test_unverified_sender_is_offered_suspicious(cfg):
+    model = FakeModel(type_="promotions")
+    msg = make_msg("m1", headers={"From": "Prize Desk <win@prize.example>", "Subject": "You won"},
+                   plain="Claim your prize now by sending your card details")
+    classify_message(msg, cfg, Classifier(cfg, model))
+    assert "suspicious" in model.calls[0][1]["type"]["criteria"]
+
+
+def test_remembered_sender_overrides_laya(cfg):
+    model = FakeModel(type_="updates")
+    out = classify_message(bank_msg("m1"), cfg, Classifier(cfg, model), lambda s: "finance")
+    assert out.decision.type == "finance"
+    assert all("type" not in q for _, q in model.calls)
+
+
+def test_auth_rule_beats_memory(cfg):
+    msg = make_msg("m1", headers={"From": "Bank <alerts@bank.example>", "Subject": "x",
+                                  "Authentication-Results": "mx.google.com; dmarc=fail"}, plain="pay now")
+    out = classify_message(msg, cfg, Classifier(cfg, FakeModel()), lambda s: "finance")
+    assert out.decision.type == "suspicious"
+
+
+def test_learns_from_owner_label_correction(store, cfg):
+    gmail = FakeGmail({"m1": bank_msg("m1")})
+    classifier = Classifier(cfg, FakeModel(type_="updates"))
+    run_once(gmail, store, cfg, classifier, now=NOW)
+    assert gmail.added == [(["m1"], ["id:Laya/Updates"])]
+    # owner swaps Laya/Updates for Laya/Finance in Gmail
+    gmail.messages["m1"]["labelIds"] = ["INBOX", "id:Laya/Finance"]
+    gmail.messages["m2"] = bank_msg("m2")
+    counts = run_once(gmail, store, cfg, classifier, now=NOW + 300)
+    assert counts["learned"] == 1
+    assert store.recall_sender("alerts@hdfcbank.net") == "finance"
+    assert gmail.added[-1] == (["m2"], ["id:Laya/Finance"])
+    # correction is recorded, so it is not re-learned on the next pass
+    assert run_once(gmail, store, cfg, classifier, now=NOW + 600)["learned"] == 0
+
+
+def test_unchanged_labels_teach_nothing(store, cfg):
+    gmail = FakeGmail({"m1": bank_msg("m1")})
+    classifier = Classifier(cfg, FakeModel(type_="finance"))
+    run_once(gmail, store, cfg, classifier, now=NOW)
+    gmail.messages["m1"]["labelIds"] = ["INBOX", "id:Laya/Finance"]
+    assert run_once(gmail, store, cfg, classifier, now=NOW + 300)["learned"] == 0
+    assert store.recall_sender("alerts@hdfcbank.net") is None
