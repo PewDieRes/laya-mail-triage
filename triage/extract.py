@@ -235,3 +235,15 @@ def to_state(f: Features, body_limit: int | None = None) -> str:
         f"Bulk sender: {_yes_no(f.is_bulk)}\n"
         f"Body: {f.body if body_limit is None else f.body[:body_limit]}"
     )
+
+
+def to_state_dict(f: Features, body_limit: int | None = None) -> dict:
+    """Laya's structured email state: fields the questions can refer to by name."""
+    name, email = _one_line(f.from_name), _one_line(f.from_email)
+    return {
+        "from": f"{name} <{email}>" if name else email,
+        "subject": _one_line(f.subject),
+        "sender_verified": _yes_no(f.verified),
+        "bulk_sender": _yes_no(f.is_bulk),
+        "body": f.body if body_limit is None else f.body[:body_limit],
+    }

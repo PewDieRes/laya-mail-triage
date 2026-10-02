@@ -79,3 +79,19 @@ def test_priority_choice_is_used(cfg):
 
 def test_priority_choice_ignored_for_no_priority_types(cfg):
     assert decide(make_laya(type="promotions", priority="act_now"), RuleHits(), cfg).priority is None
+
+
+def signal_cfg(cfg):
+    import dataclasses
+    return dataclasses.replace(
+        cfg, priority_signals={"wait": "q1", "task": "q2"},
+        priority_rules={"act_now": (("wait",), 0.6), "this_week": (("task",), 0.5)})
+
+
+def test_priority_signals_rules(cfg):
+    c = signal_cfg(cfg)
+    assert decide(make_laya(signals=(("wait", 0.7), ("task", 0.9))), RuleHits(), c).priority == "act_now"
+    assert decide(make_laya(signals=(("wait", 0.2), ("task", 0.5))), RuleHits(), c).priority == "this_week"
+    assert decide(make_laya(signals=(("wait", 0.2), ("task", 0.1))), RuleHits(), c).priority is None
+    assert decide(make_laya(signals=(("wait", 0.2), ("task", 0.1))), RuleHits(vip=True), c).priority == "act_now"
+    assert decide(make_laya(type="promotions", signals=(("wait", 0.9),)), RuleHits(), c).priority is None

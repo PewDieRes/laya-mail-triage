@@ -147,3 +147,21 @@ def test_known_no_priority_type_makes_no_call(cfg):
     result = Classifier(cfg, model).classify("s", known_type="promotions",
                                               skip_action_types=cfg.no_priority_types)
     assert model.calls == [] and result.type == "promotions"
+
+
+def test_priority_signals_asked_as_yes_no(cfg):
+    import dataclasses
+    c = dataclasses.replace(cfg, priority_signals={"wait": "Is someone waiting?", "task": "Is there a task?"})
+
+    class SignalModel(FakeModel):
+        def predict(self, state, questions, **kwargs):
+            result = super().predict(state, questions, **kwargs)
+            for q in questions:
+                if q.startswith("sig_"):
+                    result["answers"][q] = {"noul": 0.8 if q == "sig_wait" else 0.1}
+            return result
+
+    model = SignalModel()
+    result = Classifier(c, model).classify("s", known_type="career")
+    assert set(model.calls[0][1]) == {"sig_wait", "sig_task"}
+    assert dict(result.signals) == {"wait": 0.8, "task": 0.1}

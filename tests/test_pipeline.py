@@ -324,3 +324,10 @@ def test_unchanged_labels_teach_nothing(store, cfg):
     gmail.messages["m1"]["labelIds"] = ["INBOX", "id:Laya/Finance"]
     assert run_once(gmail, store, cfg, classifier, now=NOW + 300)["learned"] == 0
     assert store.recall_sender("alerts@hdfcbank.net") is None
+
+
+def test_dict_state_format_is_passed_to_laya(cfg):
+    import dataclasses
+    model = FakeModel()
+    classify_message(bank_msg("m1"), dataclasses.replace(cfg, state_format="dict"), Classifier(cfg, model))
+    assert isinstance(model.calls[0][0], dict) and model.calls[0][0]["subject"] == "Statement"

@@ -35,8 +35,13 @@ class Config:
     # Optional hierarchy: group -> (criteria, member types). When set, Laya picks a group and,
     # in the same call, a member within each multi-member group.
     type_groups: dict[str, tuple[str, tuple[str, ...]]] | None = None
+    # Optional concrete yes/no priority signals: name -> question, plus which signals
+    # (and P(yes) threshold) make an email act_now or this_week.
+    priority_signals: dict[str, str] | None = None
+    priority_rules: dict[str, tuple[tuple[str, ...], float]] | None = None
     head_max_len: int | None = None  # Laya option-text token budget per call (model default 192)
-    body_limit: int | None = None  # characters of body passed to Laya (default: extract.BODY_LIMIT)
+    body_limit: int | None = None
+    state_format: str = "text"  # "text" (one string) or "dict" (Laya's subject/from/body fields)  # characters of body passed to Laya (default: extract.BODY_LIMIT)
 
     def all_label_names(self) -> list[str]:
         return list(self.type_labels.values()) + list(self.priority_labels.values())
@@ -76,8 +81,11 @@ def load_config(config_dir: Path) -> Config:
         priority_question=raw.get("priority_question"),
         priority_criteria=_priority_criteria(raw.get("priority_criteria")),
         type_groups=_type_groups(raw.get("type_groups"), set(types)),
+        priority_signals=raw.get("priority_signals"),
+        priority_rules=_priority_rules(raw.get("priority_rules"), raw.get("priority_signals")),
         head_max_len=raw.get("head_max_len"),
         body_limit=raw.get("body_limit"),
+        state_format=_state_format(raw.get("state_format", "text")),
     )
 
 
@@ -97,3 +105,21 @@ def _type_groups(raw: dict | None, types: set[str]) -> dict[str, tuple[str, tupl
     if sorted(members) != sorted(types):
         raise ValueError("type_groups members must list every type exactly once")
     return groups
+
+
+def _priority_rules(raw: dict | None, signals: dict | None) -> dict[str, tuple[tuple[str, ...], float]] | None:
+    if raw is None:
+        return None
+    if not signals or set(raw) != {"act_now", "this_week"}:
+        raise ValueError("priority_rules needs priority_signals and exactly act_now and this_week")
+    rules = {k: (tuple(v["signals"]), float(v["threshold"])) for k, v in raw.items()}
+    unknown = {s for names, _ in rules.values() for s in names} - set(signals)
+    if unknown:
+        raise ValueError(f"priority_rules uses unknown signals: {sorted(unknown)}")
+    return rules
+
+
+def _state_format(value: str) -> str:
+    if value not in ("text", "dict"):
+        raise ValueError("state_format must be 'text' or 'dict'")
+    return value

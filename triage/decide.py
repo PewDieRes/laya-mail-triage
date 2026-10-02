@@ -30,7 +30,16 @@ def decide(laya: LayaResult, hits: RuleHits, cfg: Config) -> Decision:
         raise ValueError("no type from rules or Laya")
     unsure = hits.forced_type is None and laya.type_conf < t.type_conf
     priority = None
-    if type_ not in cfg.no_priority_types and laya.priority is not None:
+    if type_ not in cfg.no_priority_types and cfg.priority_rules and laya.signals:
+        sig = dict(laya.signals)
+        for level in ("act_now", "this_week"):
+            names, threshold = cfg.priority_rules[level]
+            if any(sig.get(n, 0.0) >= threshold for n in names):
+                priority = level
+                break
+        if hits.vip:
+            priority = "act_now"
+    elif type_ not in cfg.no_priority_types and laya.priority is not None:
         priority = "act_now" if hits.vip else (None if laya.priority == "none" else laya.priority)
     elif type_ not in cfg.no_priority_types:
         scored = laya.needs_action is not None and laya.urgency is not None

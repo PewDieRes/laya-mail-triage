@@ -70,3 +70,13 @@ def test_type_groups_must_cover_every_type(tmp_path):
 
     with pytest.raises(ValueError, match="type_groups"):
         load_config(write_config(tmp_path, bad))
+
+
+def test_priority_rules_reject_unknown_signal(tmp_path):
+    def bad(raw):
+        raw["priority_signals"] = {"wait": "Is someone waiting?"}
+        raw["priority_rules"] = {"act_now": {"signals": ["nope"], "threshold": 0.5},
+                                 "this_week": {"signals": ["wait"], "threshold": 0.5}}
+
+    with pytest.raises(ValueError, match="unknown signals"):
+        load_config(write_config(tmp_path, bad))

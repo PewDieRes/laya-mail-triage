@@ -9,7 +9,7 @@ from triage.config import Config
 
 
 class Model(Protocol):
-    def predict(self, state: str, questions: dict, **kwargs) -> dict: ...
+    def predict(self, state: str | dict, questions: dict, **kwargs) -> dict: ...
 
 
 @dataclass(frozen=True)
@@ -21,6 +21,8 @@ class LayaResult:
     urgency: float | None
     model: str
     priority: str | None = None  # set only in priority-choice mode
+    priority_probs: tuple[tuple[str, float], ...] = ()
+    signals: tuple[tuple[str, float], ...] = ()  # P(yes) per configured priority signal
 
 
 def load_router() -> Model:
@@ -83,6 +85,8 @@ class Classifier:
         return dist
 
     def action_questions(self) -> dict:
+        if self.cfg.priority_signals is not None:
+            return {f"sig_{k}": {"type": "noul", "instructions": q} for k, q in self.cfg.priority_signals.items()}
         if self.cfg.priority_criteria is not None:
             return {
                 "priority": {
@@ -126,9 +130,13 @@ class Classifier:
         result = self._predict(state, self.action_questions())
         answers = result["answers"]
         model_name = model_name or result.get("routing", {}).get("model", "unknown")
+        if self.cfg.priority_signals is not None:
+            signals = tuple((qid[4:], float(a["noul"])) for qid, a in answers.items() if qid.startswith("sig_"))
+            return LayaResult(type_, type_conf, top2, None, None, model_name, signals=signals)
         if "priority" in answers:
+            probs = tuple((k, float(v)) for k, v in answers["priority"].get("probabilities", {}).items())
             return LayaResult(type_, type_conf, top2, None, None, model_name,
-                              priority=answers["priority"]["choice"])
+                              priority=answers["priority"]["choice"], priority_probs=probs)
         return LayaResult(
             type=type_,
             type_conf=type_conf,

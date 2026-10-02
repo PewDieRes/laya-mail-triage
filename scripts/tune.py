@@ -26,7 +26,8 @@ def load_labels(path: Path) -> list[dict]:
         return [r for r in csv.DictReader(fh) if r["true_type"].strip()]
 
 
-def evaluate(config_dir: Path, labels: list[dict], model, type_only: bool = False) -> str:
+def evaluate(config_dir: Path, labels: list[dict], model, type_only: bool = False,
+             oracle_type: bool = False) -> str:
     cfg = load_config(config_dir)
     if type_only:  # skip the needs_action/urgency call to iterate on type criteria faster
         cfg = replace(cfg, no_priority_types=frozenset(cfg.type_criteria))
@@ -34,7 +35,8 @@ def evaluate(config_dir: Path, labels: list[dict], model, type_only: bool = Fals
     rows, started = [], time.perf_counter()
     for label in labels:
         raw = json.loads((ROOT / "data" / "cache" / f"{label['msg_id']}.json").read_text())
-        out = classify_message(raw, cfg, classifier)
+        recall = (lambda _s, t=label["true_type"]: t) if oracle_type else None
+        out = classify_message(raw, cfg, classifier, recall)
         rows.append((label, out))
     elapsed = time.perf_counter() - started
 
@@ -73,6 +75,8 @@ def evaluate(config_dir: Path, labels: list[dict], model, type_only: bool = Fals
         "true_type": l["true_type"], "true_priority": l["true_priority"] or "none",
         "pred_type": o.decision.type, "pred_priority": prio(o), "type_conf": o.laya.type_conf,
         "forced": o.hits.forced_type is not None,
+        "needs_action": o.laya.needs_action, "urgency": o.laya.urgency,
+        "priority_probs": dict(o.laya.priority_probs), "signals": dict(o.laya.signals),
     } for l, o in rows]
     return "\n".join(lines), records
 
@@ -80,11 +84,12 @@ def evaluate(config_dir: Path, labels: list[dict], model, type_only: bool = Fals
 def main() -> None:
     args = sys.argv[1:]
     type_only = "--type-only" in args
-    args = [a for a in args if a != "--type-only"]
+    oracle_type = "--oracle-type" in args  # use the true type, to tune priority on its own
+    args = [a for a in args if a not in ("--type-only", "--oracle-type")]
     labels = load_labels(Path(args[0]))
     model = load_router()
     for config_dir in args[1:]:
-        report, records = evaluate(Path(config_dir), labels, model, type_only)
+        report, records = evaluate(Path(config_dir), labels, model, type_only, oracle_type)
         name = Path(config_dir).name or "config"
         (ROOT / "data" / f"tune-{name}.json").write_text(json.dumps(records))
         (ROOT / "data" / f"tune-{name}.txt").write_text(report + "\n")

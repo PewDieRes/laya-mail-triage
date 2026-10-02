@@ -14,7 +14,7 @@ from googleapiclient.errors import HttpError
 from triage.classifier import Classifier, LayaResult
 from triage.config import Config
 from triage.decide import Decision, decide
-from triage.extract import Features, parse_message, to_state
+from triage.extract import Features, parse_message, to_state, to_state_dict
 from triage.gmail_client import AuthError
 from triage.rules import SUSPICIOUS, RuleHits, apply_rules
 from triage.store import Store
@@ -48,7 +48,9 @@ def classify_message(raw: dict, cfg: Config, classifier: Classifier,
     # Laya cannot tell phishing from text (banks quote anti-scam warnings), so a
     # verified sender is never offered "suspicious"; the auth rules handle spoofing.
     exclude = frozenset({SUSPICIOUS}) if features.verified else frozenset()
-    laya = classifier.classify(to_state(features, cfg.body_limit), skip_type=hits.forced_type is not None,
+    state = (to_state_dict(features, cfg.body_limit) if cfg.state_format == "dict"
+             else to_state(features, cfg.body_limit))
+    laya = classifier.classify(state, skip_type=hits.forced_type is not None,
                                 skip_action_types=cfg.no_priority_types, exclude_types=exclude,
                                 known_type=known)
     return Outcome(features, hits, laya, decide(laya, hits, cfg))

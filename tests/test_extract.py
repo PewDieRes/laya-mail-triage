@@ -253,3 +253,10 @@ def test_leaked_css_is_removed():
 def test_to_state_body_limit():
     assert to_state(make_features(body="abcdef"), body_limit=3).endswith("Body: abc")
     assert to_state(make_features(body="abcdef")).endswith("Body: abcdef")
+
+
+def test_to_state_dict_fields():
+    from triage.extract import to_state_dict
+    d = to_state_dict(make_features(subject="Hi\nthere", body="abcdef"), body_limit=3)
+    assert d == {"from": "Alice <alice@example.com>", "subject": "Hi there", "sender_verified": "yes",
+                 "bulk_sender": "no", "body": "abc"}
