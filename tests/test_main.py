@@ -116,3 +116,49 @@ def test_once_startup_auth_error_returns_2(monkeypatch, tmp_path):
 
     _setup_run(monkeypatch, tmp_path, from_token, lambda *a, **k: "ok", lambda s: None)
     assert tm.main(["once"]) == 2
+
+
+def test_run_startup_non_auth_error_does_not_exit(monkeypatch, tmp_path):
+    sleeps, builds = [], []
+
+    def from_token(token_path, read_only):
+        builds.append(read_only)
+        if len(builds) == 1:
+            raise ValueError("corrupt token.json")
+        return object()
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 2:
+            raise KeyboardInterrupt
+
+    _setup_run(monkeypatch, tmp_path, from_token, lambda *a, **k: "ok", sleep)
+    assert tm.main(["run"]) == 0
+    assert sleeps[0] == 3600 and builds == [False, False]
+
+
+def test_run_rebuild_non_auth_error_does_not_escape_loop(monkeypatch, tmp_path, caplog):
+    sleeps, builds, runs = [], [], []
+
+    def from_token(token_path, read_only):
+        builds.append(read_only)
+        if len(builds) == 2:
+            raise OSError("disk full")
+        return object()
+
+    def run_once(*a, **k):
+        runs.append(1)
+        if len(runs) == 1:
+            raise AuthError("revoked")
+        return "ok"
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 3:
+            raise KeyboardInterrupt
+
+    _setup_run(monkeypatch, tmp_path, from_token, run_once, sleep)
+    assert tm.main(["run"]) == 0
+    assert sleeps[:2] == [3600, 3600]
+    assert len(builds) == 3
+    assert "Gmail connect failed: disk full" in caplog.text

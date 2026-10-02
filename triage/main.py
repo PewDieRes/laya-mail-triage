@@ -45,7 +45,9 @@ def _connect_forever(token: Path) -> GmailClient:
             return GmailClient.from_token(token, read_only=False)
         except (AuthError, RefreshError) as exc:
             log.critical("Gmail auth problem: %s; re-run auth.py on the host", exc)
-            time.sleep(AUTH_RETRY_SECONDS)
+        except Exception as exc:
+            log.error("Gmail connect failed: %s", exc)
+        time.sleep(AUTH_RETRY_SECONDS)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -73,13 +75,15 @@ def main(argv: list[str] | None = None) -> int:
                 log.info("done: %s", run_once(gmail, store, cfg, classifier))
                 return 0
             while True:
+                if gmail is None:
+                    gmail = _connect_forever(token)
                 try:
                     log.info("done: %s", run_once(gmail, store, cfg, classifier))
                     time.sleep(cfg.interval_minutes * 60)
                 except (AuthError, RefreshError) as exc:
                     log.critical("Gmail auth problem: %s; re-run auth.py on the host", exc)
                     time.sleep(AUTH_RETRY_SECONDS)
-                    gmail = _connect_forever(token)
+                    gmail = None
                 except Exception:
                     log.exception("cycle failed; retrying next interval")
                     time.sleep(cfg.interval_minutes * 60)

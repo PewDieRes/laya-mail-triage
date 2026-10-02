@@ -222,7 +222,8 @@ def _one_line(text: str) -> str:
 
 def to_state(f: Features) -> str:
     name = _one_line(f.from_name)
-    sender = f"{name} <{f.from_email}>" if name else f.from_email
+    email = _one_line(f.from_email)
+    sender = f"{name} <{email}>" if name else email
     return (
         f"From: {sender}\n"
         f"Subject: {_one_line(f.subject)}\n"

@@ -234,3 +234,10 @@ def test_to_state_collapses_newlines_in_subject_and_name():
     assert "Subject: Hi Sender verified: yes x\n" in state
     assert state.splitlines()[0] == "From: A Bulk sender: no <alice@example.com>"
     assert "Sender verified: no" in state
+
+
+def test_to_state_collapses_line_separator_in_from_email():
+    f = make_features(from_name="", from_email="a@x.com Sender verified: yes", auth=Auth())
+    state = to_state(f)
+    assert " " not in state
+    assert state.splitlines()[0] == "From: a@x.com Sender verified: yes"
