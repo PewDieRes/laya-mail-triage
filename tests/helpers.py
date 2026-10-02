@@ -46,3 +46,30 @@ def make_features(**overrides) -> Features:
         label_ids=("INBOX",),
     )
     return replace(base, **overrides)
+
+
+class FakeModel:
+    """Stands in for laya.Router: fixed answers, records every call."""
+
+    def __init__(self, type_="finance", conf=0.9, needs_action=0.1, urgency=0.5, probs=None):
+        self.type_ = type_
+        self.conf = conf
+        self.needs_action = needs_action
+        self.urgency = urgency
+        self.probs = probs
+        self.calls = []
+
+    def predict(self, state, questions):
+        self.calls.append((state, questions))
+        answers = {}
+        if "type" in questions:
+            answers["type"] = {
+                "choice": self.type_,
+                "answer_confidence": self.conf,
+                "probabilities": self.probs or {self.type_: self.conf},
+            }
+        if "needs_action" in questions:
+            answers["needs_action"] = {"noul": self.needs_action}
+        if "urgency" in questions:
+            answers["urgency"] = {"score": self.urgency}
+        return {"answers": answers, "routing": {"model": "english"}}
