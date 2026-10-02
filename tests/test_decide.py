@@ -100,3 +100,13 @@ def test_priority_signals_rules(cfg):
 def test_unsure_vip_keeps_act_now(cfg):
     decision = decide(make_laya(type_conf=0.2), RuleHits(vip=True, names=("vip",)), cfg)
     assert decision.label_names(cfg) == ["Laya/?Unsure", "Laya/!Act Now"]
+
+
+def test_per_type_confidence_override(cfg):
+    import dataclasses
+    c = dataclasses.replace(cfg, type_conf_by_type={"suspicious": 0.7})
+    assert decide(make_laya(type="suspicious", type_conf=0.6), RuleHits(), c).unsure
+    assert not decide(make_laya(type="suspicious", type_conf=0.75), RuleHits(), c).unsure
+    assert not decide(make_laya(type="finance", type_conf=0.6), RuleHits(), c).unsure
+    forced = RuleHits(forced_type="suspicious", names=("auth_fail",))
+    assert not decide(make_laya(type=None, type_conf=1.0), forced, c).unsure

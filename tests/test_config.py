@@ -95,3 +95,8 @@ def test_production_config_is_valid():
     assert cfg.type_groups is not None and not cfg.priority_enabled
     assert all(name.startswith("Laya/") for name in cfg.all_label_names())
     assert cfg.no_priority_types <= set(cfg.type_criteria)
+
+
+def test_type_conf_by_type_rejects_unknown(tmp_path):
+    with pytest.raises(ValueError, match="type_conf_by_type"):
+        load_config(write_config(tmp_path, lambda raw: raw.update(type_conf_by_type={"nope": 0.7})))

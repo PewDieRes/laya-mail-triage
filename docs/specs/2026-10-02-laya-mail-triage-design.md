@@ -36,34 +36,42 @@ Automatically classify every incoming email in a personal Gmail account into a u
 
 ## 3. Taxonomy
 
-Each email gets **one Type label** and **zero or one Priority label**. Every label is nested under `Laya/`.
+*Revised 2026-10-02 after tuning on a real 500-email inbox (see section 13).* The tool is **general**:
+category text is generic and nothing is learned from any user's mail.
 
-### 3.1 Type labels (Laya `choice`)
+Each email gets **one Type label**, or **only `Laya/?Unsure`** when Laya is not confident. Every label is nested under `Laya/`.
 
-| Group | Label | Short criteria text given to Laya |
+### 3.1 Type labels, asked as a two-level hierarchy
+
+Laya first picks a **group**, and in the same call a **member** within each multi-member group. The type is the
+member with the highest P(group) × P(member). Fewer options per question proved more accurate than one 11-way choice.
+
+| Group | Label | Criteria text given to Laya (abridged; full text in `config/config.yaml`) |
 |---|---|---|
-| Inbox-worthy | `Laya/Personal` | personally written by friends or family; casual conversation, not about jobs |
-| | `Laya/Career` | jobs, recruiters, HR outreach, interviews, applications, freelance offers |
-| | `Laya/Finance` | banks, credit cards, UPI, statements, bills, tax, insurance |
-| | `Laya/Security` | OTP, verification code, login alert, password reset, account change |
-| | `Laya/Travel & Events` | flights, trains, hotels, cabs, tickets, bookings, event passes |
-| | `Laya/Orders` | shop or merchant purchases, order receipts, shipping, delivery, returns |
-| Low priority | `Laya/Updates` | automated app, service or social notifications, product or policy changes |
-| | `Laya/Newsletters` | subscribed content, blogs, digests, editorial articles |
-| Junk | `Laya/Promotions` | sales, offers, discounts, marketing, limited-time deals |
-| | `Laya/Suspicious` | phishing, scam, fake prize, urgent request for password or payment |
+| jobs | `Laya/Career` | about a job application you submitted: employer messages, interviews, assessments, onboarding |
+| | `Laya/Job Alerts` | new job openings you have not applied to: hiring posts, recommendations, recruiter mass mail |
+| money | `Laya/Finance` | bank alerts, statements, bills, due or overdue payments, tax, subscription billing |
+| | `Laya/Orders` | online shopping: order, receipt, shipping, delivered, return |
+| account | `Laya/Security` | OTP, verification code, verify device, login or security alert, password |
+| | `Laya/Updates` | service notices: welcome, terms or privacy change, failed delivery, support ticket, ratings |
+| travel | `Laya/Travel & Events` | flight, train, bus, ride share, hotel, booking, boarding pass, tickets |
+| reading | `Laya/Newsletters` | articles, advice, tips, blogs, digests, reviews |
+| | `Laya/Promotions` | offers, sales, rewards, paid courses, webinars, referral programs |
+| personal | `Laya/Personal` | a personal email written by a friend or family member |
+| scam | `Laya/Suspicious` | phishing or scam (offered to Laya **only for unverified senders**) |
 
-The criteria text lives in `config/config.yaml`, so it can be tuned without code changes.
+### 3.2 Confidence and `?Unsure`
 
-### 3.2 Priority labels
+- A type label is shown only when its probability is **≥ 0.4** (`thresholds.type_conf`).
+- Laya-chosen `Suspicious` needs **≥ 0.7** (`type_conf_by_type`), because a wrong Suspicious label hides real mail. Suspicious forced by the auth rules is always shown.
+- Below the threshold the email gets **only `Laya/?Unsure`**, never a type guess.
 
-| Label | Condition |
-|---|---|
-| `Laya/!Act Now` | The sender is on the VIP list, **or** (`needs_action` ≥ 0.6 **and** urgency ≥ "today") |
-| `Laya/!This Week` | `needs_action` ≥ 0.6 **and** urgency is "this week" |
-| `Laya/?Unsure` | The Type confidence is below the threshold (0.55 by default; tuned from the eval). The best-guess Type label is still applied. It is used only for low confidence, never for failed messages. |
+### 3.3 Priority (disabled in v1)
 
-Priority labels are **never** applied to `Promotions`, `Newsletters` or `Suspicious`. The `!` and `?` prefixes sort them above the type labels in Gmail's sidebar.
+`priority_enabled: false`. No Laya priority question is asked. Four methods were measured (urgency/needs-action
+scores, a priority choice, a set of concrete yes/no signals, Laya's own email preset); none exceeded ~60% `!Act Now`
+precision, so v1 shows no Laya-driven priority. Senders on the owner's VIP list (verified senders only) still get
+`Laya/!Act Now`. The code for the other priority methods remains, behind config, for future work.
 
 ## 4. Architecture
 
@@ -179,30 +187,22 @@ Rules return a `RuleHits` object. A forced Type skips the Laya type call. A forc
 
 ### 5.4 `classifier.py` (Laya wrapper)
 
-- Uses `laya.Router(device="cpu")` with lazy loading, so the English checkpoint is used by default. Devanagari text or non-English mail is routed automatically to `laya-multilingual`.
-- Each email takes **up to two calls**, to stay within the per-call option budget. When a rule forces the type, no Laya call is made. When the type is in `no_priority_types`, Call B is skipped and `needs_action`/`urgency` are `None`. The decision is recorded on 2026-10-02 and roughly halves the time for promotions, newsletters and suspicious mail.
-  - **Call A, `type`** (`choice`): the 10 categories from section 3.1. Skipped when a rule forces the type.
-  - **Call B:**
-    - `needs_action` (`noul`): "Does this email ask the recipient to reply, pay, confirm, or do something?"
-    - `urgency` (`score`): `["no deadline", "this month", "this week", "today", "immediately"]` (levels 0–4)
-- v1 calls `predict(state, questions)` once per call, because the request format of `Router.predict_batch` is not documented. Batching is a later optimisation if eval runs are too slow.
-- Returns a `LayaResult` with the type, `type_conf` (`answer_confidence`), the top-2 probabilities, `needs_action`, `urgency` (the expected level as a float) and which checkpoint was used.
-- The `Router` sits behind a small interface (`predict`, `predict_batch`), so tests can inject a fake model.
+- Uses `laya.Router(device="cpu")` with lazy loading.
+- **Type:** one `predict` call with the group question plus one member question per multi-member group (`type_groups` in config). A flat single choice is still supported when `type_groups` is absent. `head_max_len: 512` raises Laya's option-text budget.
+- Verified senders are never offered `suspicious`: bank and app mail quotes anti-scam warnings, which Laya mistook for phishing. Spoofing is caught by the auth rules instead.
+- **Action call:** skipped entirely when `priority_enabled` is false (v1), so v1 makes **one Laya call per email** (~8.5 s on the owner's Intel CPU).
+- The state is the text form (`From`, `Subject`, `Sender verified`, `Bulk sender`, `Body`, body cut to `body_limit: 600`). Laya's dict state format was measured and was not better.
+- Returns a `LayaResult` with the type, `type_conf` (P(group) × P(member)), the top-2 types and the checkpoint used.
 
 ### 5.5 `decide.py` (pure)
 
 ```
 type     = rules.forced_type or laya.type
-unsure   = rules.forced_type is None and laya.type_conf < T_type        # 0.55
-priority = None
-if type not in {Promotions, Newsletters, Suspicious}:
-    if rules.vip:                                         priority = ActNow
-    elif laya.needs_action >= T_action and urgency >= 2.5: priority = ActNow    # ≥ "today"
-    elif laya.needs_action >= T_action and urgency >= 1.5: priority = ThisWeek  # ≥ "this week"
-labels = [type] + ([priority] if priority else []) + ([Unsure] if unsure else [])
+needed   = type_conf_by_type.get(type, T_type)            # suspicious 0.7, else 0.4
+unsure   = rules.forced_type is None and laya.type_conf < needed
+priority = ActNow if rules.vip and type not in no_priority_types else None   # v1: priority disabled
+labels   = [Unsure] + ([priority] if priority) if unsure else [type] + ([priority] if priority)
 ```
-
-Every threshold (`T_type`, `T_action`, the urgency cut-offs) is set in `config.yaml`.
 
 ### 5.6 `store.py`
 
@@ -274,12 +274,13 @@ Run with the host's Python: `pip install google-auth-oauthlib`. It uses `Install
 
 ## 10. Acceptance criteria to go live with labelling
 
-1. Type accuracy is at least **85%** on at least 100 hand-labelled emails.
-2. `!Act Now` precision is at least **80%**. False alarms cost attention, so this matters more than recall.
-3. No real bank, OTP or personal email is classified as `Suspicious` in the labelled set.
-4. A run of `once` on the live inbox applies labels and changes nothing else, checked manually on 20 messages.
+The original targets (85% type accuracy on all mail, 80% `!Act Now` precision) were **not reachable with Laya
+zero-shot**; see section 13. The owner chose (2026-10-02) to go live with:
 
-If a target is missed, the next steps are to adjust the criteria wording or thresholds, add a rule, or merge categories that keep getting confused (for example, Updates with Newsletters).
+1. Labels shown only above the confidence cutoff (0.4), measured at **~73% correct on held-out mail, covering ~67% of mail**; the rest is `?Unsure`.
+2. Priority disabled.
+3. No real mail labelled `Suspicious` in the 500-email set. Met with the 0.7 Suspicious cutoff.
+4. A run of `once` on the live inbox applies labels and changes nothing else, checked manually on 20 messages.
 
 ## 11. Rollout
 
@@ -289,13 +290,39 @@ If a target is missed, the next steps are to adjust the criteria wording or thre
 | P1 Eval | Auth works, `eval` produces a CSV from the last 500 emails, and the owner labels at least 100 rows. |
 | P2 Tune | Iterate on the criteria and thresholds until section 10 is met. |
 | P3 Live | `run` in label mode inside the container, auto-started. |
-| v2 (later) | Optionally auto-archive Promotions and Newsletters, and use label corrections as tuning data. |
+| v2 (later) | Fine-tune Laya on a general, public labelled email dataset (needs a GPU) to raise accuracy and make priority usable. Optionally auto-archive Promotions and Newsletters. |
 | v3 (later) | Cloud Run plus Gmail Pub/Sub push for always-on, real-time triage. |
 
 ## 12. Risks and open questions
 
-- **Option budget:** 10 types with short criteria may still overflow the 192-token budget. P0 will measure this. If it overflows, the fallback is a two-level choice: first Inbox-worthy / Low priority / Junk, then the sub-type.
-- **Intel CPU speed:** expected to be fine, but P0 will confirm.
+- **Accuracy ceiling:** zero-shot Laya mislabels mail written to look like something else (course marketing phrased as "Confirm your application…", career-advice newsletters about hiring). Only fine-tuning on general labelled data is expected to fix this.
+- **Evaluation bias:** all measurements come from one personal inbox. Category wording was kept generic, but results should be re-checked on 1–2 differently shaped inboxes.
+- **Intel CPU speed:** ~8.5 s per email. Fine for personal volume; slow for bulk backfills.
 - **Hinglish or code-mixed mail:** this may route to the English checkpoint and score worse. P2 watches for it, and the fix is forcing `model="multilingual"`.
 - **Calibration:** Laya's documentation recommends temperature calibration before gating on confidence. v1 uses simple thresholds tuned on the eval set, and calibration can be added if confidence turns out to be poorly calibrated.
 - **Docker Desktop has to be running:** if it isn't, no triage happens, but nothing breaks either. The next run catches up thanks to the one-hour overlap.
+
+## 13. Measured results (2026-10-02)
+
+Evaluation set: 500 recent inbox emails, hand-labelled by type and priority. 183 of them (one per sender/subject
+group) were used to compare variants; the other **317 were never used for any tuning decision (held-out)**.
+
+| Variant (type, dev set of 183) | Accuracy, all mail |
+|---|---|
+| Original flat 10-way choice | 57.4% |
+| Sharper criteria, 512-token option budget | 62.8% |
+| Yes/no question per type | 42.1% |
+| **Two-level group hierarchy (chosen)** | **66.7%** |
+| Hierarchy with Laya dict state | 65.0% |
+
+Final config, all 500 emails:
+
+| Cutoff | Held-out: share labelled | Held-out: labels correct | All 500: labelled / correct |
+|---|---|---|---|
+| 0.5 | 36% | 85% | 43% / 85% |
+| **0.4 (chosen)** | **67%** | **73%** | 69% / 75% |
+
+Per-type label precision at 0.4 (all 500): Travel 23/23, Finance 29/32, Security 37/40, Career 150/200,
+Job Alerts 9/31 (mostly job-themed newsletters and marketing), Personal 0/5 (ride-platform chat), Suspicious: none wrong.
+
+Priority (oracle type, dev set): best macro F1 ≈ 0.44 for every method tried; best `!Act Now` precision ≈ 60% at ≈ 30% recall.

@@ -90,9 +90,11 @@ priority_labels:
   this_week: Laya/!This Week
   unsure: Laya/?Unsure
 thresholds:
-  type_conf: 0.5
+  type_conf: 0.4
   needs_action: 0.6
   urgency_act_now: 2.5
   urgency_this_week: 1.5
+type_conf_by_type:
+  suspicious: 0.7
 head_max_len: 512
 body_limit: 600

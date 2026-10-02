@@ -41,6 +41,8 @@ class Config:
     priority_rules: dict[str, tuple[tuple[str, ...], float]] | None = None
     head_max_len: int | None = None  # Laya option-text token budget per call (model default 192)
     body_limit: int | None = None
+    # Stricter confidence for specific Laya-chosen types (e.g. suspicious hides real mail).
+    type_conf_by_type: dict[str, float] | None = None
     priority_enabled: bool = True  # False: no Laya priority question; only VIP senders get act_now
     state_format: str = "text"  # "text" (one string) or "dict" (Laya's subject/from/body fields)  # characters of body passed to Laya (default: extract.BODY_LIMIT)
 
@@ -90,6 +92,7 @@ def load_config(config_dir: Path) -> Config:
         body_limit=raw.get("body_limit"),
         state_format=_state_format(raw.get("state_format", "text")),
         priority_enabled=bool(raw.get("priority_enabled", True)),
+        type_conf_by_type=_type_conf_by_type(raw.get("type_conf_by_type"), set(types)),
     )
 
 
@@ -127,3 +130,12 @@ def _state_format(value: str) -> str:
     if value not in ("text", "dict"):
         raise ValueError("state_format must be 'text' or 'dict'")
     return value
+
+
+def _type_conf_by_type(raw: dict | None, types: set[str]) -> dict[str, float] | None:
+    if raw is None:
+        return None
+    unknown = set(raw) - types
+    if unknown:
+        raise ValueError(f"type_conf_by_type has unknown types: {sorted(unknown)}")
+    return {k: float(v) for k, v in raw.items()}

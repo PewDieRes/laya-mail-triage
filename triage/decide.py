@@ -29,7 +29,8 @@ def decide(laya: LayaResult, hits: RuleHits, cfg: Config) -> Decision:
     type_ = hits.forced_type or laya.type
     if type_ is None:
         raise ValueError("no type from rules or Laya")
-    unsure = hits.forced_type is None and laya.type_conf < t.type_conf
+    needed = (cfg.type_conf_by_type or {}).get(type_, t.type_conf)
+    unsure = hits.forced_type is None and laya.type_conf < needed
     priority = None
     if type_ not in cfg.no_priority_types and cfg.priority_rules and laya.signals:
         sig = dict(laya.signals)
