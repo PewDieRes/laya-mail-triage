@@ -61,7 +61,7 @@ The criteria text lives in `config/config.yaml`, so it can be tuned without code
 |---|---|
 | `Laya/!Act Now` | The sender is on the VIP list, **or** (`needs_action` ≥ 0.6 **and** urgency ≥ "today") |
 | `Laya/!This Week` | `needs_action` ≥ 0.6 **and** urgency is "this week" |
-| `Laya/?Unsure` | The Type confidence is below the threshold (0.55 by default). The best-guess Type label is still applied. |
+| `Laya/?Unsure` | The Type confidence is below the threshold (0.55 by default; tuned from the eval). The best-guess Type label is still applied. It is used only for low confidence, never for failed messages. |
 
 Priority labels are **never** applied to `Promotions`, `Newsletters` or `Suspicious`. The `!` and `?` prefixes sort them above the type labels in Gmail's sidebar.
 
@@ -165,7 +165,7 @@ Bulk sender: yes
 Body: Dear customer, your statement for card ending 1234 ...
 ```
 
-`Sender verified` is `yes` when DMARC passes, or when both SPF and DKIM pass.
+Only the topmost `Authentication-Results` header with authserv-id `mx.google.com` is trusted. `Sender verified` is `yes` when DMARC passes, or when an SPF or DKIM pass is for a domain aligned with the From domain (the same domain, or a subdomain either way). The decision is recorded on 2026-10-02. Subject and sender name have newlines and invisible characters collapsed, so they can't inject fake lines.
 
 ### 5.3 `rules.py` (pure functions, run before Laya)
 
@@ -180,7 +180,7 @@ Rules return a `RuleHits` object. A forced Type skips the Laya type call. A forc
 ### 5.4 `classifier.py` (Laya wrapper)
 
 - Uses `laya.Router(device="cpu")` with lazy loading, so the English checkpoint is used by default. Devanagari text or non-English mail is routed automatically to `laya-multilingual`.
-- Each email takes **two calls**, to stay within the per-call option budget:
+- Each email takes **up to two calls**, to stay within the per-call option budget. When a rule forces the type, no Laya call is made. When the type is in `no_priority_types`, Call B is skipped and `needs_action`/`urgency` are `None`. The decision is recorded on 2026-10-02 and roughly halves the time for promotions, newsletters and suspicious mail.
   - **Call A, `type`** (`choice`): the 10 categories from section 3.1. Skipped when a rule forces the type.
   - **Call B:**
     - `needs_action` (`noul`): "Does this email ask the recipient to reply, pay, confirm, or do something?"
@@ -245,7 +245,10 @@ Run with the host's Python: `pip install google-auth-oauthlib`. It uses `Install
 |---|---|
 | Gmail 429 or 5xx | The client library retries with backoff. If it still fails, the cycle is skipped and the next one retries. |
 | Token revoked or expired without a refresh | A clear error tells you to re-run `auth.py`. The loop stops (exit code 2) instead of spinning. |
-| Laya fails on one message | The error is logged and the message is marked `status=error, attempts+1`. Errored ids are re-queued in later cycles (whatever their age), up to 3 attempts, and then labelled `Laya/?Unsure`. |
+| Laya or fetch fails on one message | The error is logged and the message is marked `status=error, attempts+1`. Errored ids are re-queued in later cycles (whatever their age). After 3 attempts the status becomes the terminal `failed`, and the message stays **unlabelled**. The decision is recorded on 2026-10-02. |
+| Gmail 404 on fetch (message deleted) | Marked `skipped`; it is not an error. |
+| Most messages fail in one pass (outage) | A circuit breaker: if 3 or more new messages fail **and** more than 50% of the pass fails, the pass is aborted. No attempts are bumped for new messages, and `last_run` is not advanced. If every label-write group fails, it is treated the same way. |
+| One label-write group fails | The other groups are still applied. The failed group's messages are marked `error`. |
 | Message can't be parsed | Laya runs on the subject and sender alone. |
 | Model download fails | The process exits non-zero, and the container restart policy retries. |
 
