@@ -2,6 +2,7 @@
 import base64
 from dataclasses import replace
 
+from triage.classifier import LayaResult
 from triage.extract import Auth, Features
 
 
@@ -73,3 +74,9 @@ class FakeModel:
         if "urgency" in questions:
             answers["urgency"] = {"score": self.urgency}
         return {"answers": answers, "routing": {"model": "english"}}
+
+
+def make_laya(**overrides) -> LayaResult:
+    base = LayaResult(type="finance", type_conf=0.9, top2=(("finance", 0.9),),
+                      needs_action=0.1, urgency=0.5, model="english")
+    return replace(base, **overrides)

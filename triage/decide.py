@@ -1,0 +1,39 @@
+"""Combine Laya output and rule hits into the labels to apply."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from triage.classifier import LayaResult
+from triage.config import Config
+from triage.rules import RuleHits
+
+
+@dataclass(frozen=True)
+class Decision:
+    type: str
+    priority: str | None
+    unsure: bool
+
+    def label_names(self, cfg: Config) -> list[str]:
+        names = [cfg.type_labels[self.type]]
+        if self.priority:
+            names.append(cfg.priority_labels[self.priority])
+        if self.unsure:
+            names.append(cfg.priority_labels["unsure"])
+        return names
+
+
+def decide(laya: LayaResult, hits: RuleHits, cfg: Config) -> Decision:
+    t = cfg.thresholds
+    type_ = hits.forced_type or laya.type
+    if type_ is None:
+        raise ValueError("no type from rules or Laya")
+    unsure = hits.forced_type is None and laya.type_conf < t.type_conf
+    priority = None
+    if type_ not in cfg.no_priority_types:
+        needs_action = laya.needs_action >= t.needs_action
+        if hits.vip or (needs_action and laya.urgency >= t.urgency_act_now):
+            priority = "act_now"
+        elif needs_action and laya.urgency >= t.urgency_this_week:
+            priority = "this_week"
+    return Decision(type=type_, priority=priority, unsure=unsure)
