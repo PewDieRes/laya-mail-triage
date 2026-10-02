@@ -32,6 +32,15 @@ class Store:
         self.db = sqlite3.connect(path)
         self.db.executescript(_SCHEMA)
 
+    def close(self) -> None:
+        self.db.close()
+
+    def __enter__(self) -> Store:
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
     def is_done(self, msg_id: str) -> bool:
         row = self.db.execute("SELECT status FROM processed WHERE msg_id = ?", (msg_id,)).fetchone()
         return row is not None and row[0] in ("ok", "skipped")
