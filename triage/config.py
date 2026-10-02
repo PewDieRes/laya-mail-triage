@@ -41,10 +41,13 @@ class Config:
     priority_rules: dict[str, tuple[tuple[str, ...], float]] | None = None
     head_max_len: int | None = None  # Laya option-text token budget per call (model default 192)
     body_limit: int | None = None
+    priority_enabled: bool = True  # False: no Laya priority question; only VIP senders get act_now
     state_format: str = "text"  # "text" (one string) or "dict" (Laya's subject/from/body fields)  # characters of body passed to Laya (default: extract.BODY_LIMIT)
 
     def all_label_names(self) -> list[str]:
-        return list(self.type_labels.values()) + list(self.priority_labels.values())
+        priority = [name for key, name in self.priority_labels.items()
+                    if self.priority_enabled or key != "this_week"]
+        return list(self.type_labels.values()) + priority
 
 
 def load_vip(path: Path) -> frozenset[str]:
@@ -86,6 +89,7 @@ def load_config(config_dir: Path) -> Config:
         head_max_len=raw.get("head_max_len"),
         body_limit=raw.get("body_limit"),
         state_format=_state_format(raw.get("state_format", "text")),
+        priority_enabled=bool(raw.get("priority_enabled", True)),
     )
 
 

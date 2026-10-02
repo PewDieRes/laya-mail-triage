@@ -6,17 +6,18 @@ import yaml
 from triage.config import load_config, load_vip
 
 REPO = Path(__file__).resolve().parent.parent
+FIXTURE = REPO / "tests" / "fixtures" / "config"
 
 
 def write_config(tmp_path, mutate):
-    raw = yaml.safe_load((REPO / "config" / "config.yaml").read_text())
+    raw = yaml.safe_load((FIXTURE / "config.yaml").read_text())
     mutate(raw)
     (tmp_path / "config.yaml").write_text(yaml.safe_dump(raw))
     return tmp_path
 
 
-def test_loads_repo_config():
-    cfg = load_config(REPO / "config")
+def test_loads_fixture_config():
+    cfg = load_config(FIXTURE)
     assert len(cfg.type_criteria) == 10
     assert set(cfg.type_criteria) == set(cfg.type_labels)
     assert all(name.startswith("Laya/") for name in cfg.all_label_names())
@@ -61,7 +62,7 @@ def test_priority_criteria_must_have_three_keys(tmp_path):
 
 
 def test_priority_criteria_optional():
-    assert load_config(REPO / "config").priority_criteria is None
+    assert load_config(FIXTURE).priority_criteria is None
 
 
 def test_type_groups_must_cover_every_type(tmp_path):
@@ -80,3 +81,17 @@ def test_priority_rules_reject_unknown_signal(tmp_path):
 
     with pytest.raises(ValueError, match="unknown signals"):
         load_config(write_config(tmp_path, bad))
+
+
+def test_priority_disabled_has_no_this_week_label(tmp_path):
+    cfg = load_config(write_config(tmp_path, lambda raw: raw.update(priority_enabled=False)))
+    assert cfg.priority_enabled is False
+    assert "Laya/!This Week" not in cfg.all_label_names()
+    assert {"Laya/!Act Now", "Laya/?Unsure"} <= set(cfg.all_label_names())
+
+
+def test_production_config_is_valid():
+    cfg = load_config(REPO / "config")
+    assert cfg.type_groups is not None and not cfg.priority_enabled
+    assert all(name.startswith("Laya/") for name in cfg.all_label_names())
+    assert cfg.no_priority_types <= set(cfg.type_criteria)

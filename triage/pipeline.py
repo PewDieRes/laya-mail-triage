@@ -47,7 +47,9 @@ def classify_message(raw: dict, cfg: Config, classifier: Classifier,
     state = (to_state_dict(features, cfg.body_limit) if cfg.state_format == "dict"
              else to_state(features, cfg.body_limit))
     laya = classifier.classify(state, skip_type=hits.forced_type is not None,
-                                skip_action_types=cfg.no_priority_types, exclude_types=exclude,
+                                skip_action_types=(cfg.no_priority_types if cfg.priority_enabled
+                                                   else frozenset(cfg.type_criteria)),
+                                exclude_types=exclude,
                                 known_type=known)
     return Outcome(features, hits, laya, decide(laya, hits, cfg))
 

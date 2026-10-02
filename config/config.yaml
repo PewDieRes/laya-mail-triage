@@ -1,51 +1,98 @@
+# Laya Mail Triage config. Category text is general (not tuned to one inbox's senders).
 interval_minutes: 5
-
-type_question: "What kind of email is this?"
+type_question: Which inbox folder should this email go in?
 types:
   personal:
-    label: "Laya/Personal"
-    criteria: "personally written by friends or family; casual conversation, not about jobs"
+    label: Laya/Personal
+    criteria: a personal email written by a friend or family member
   career:
-    label: "Laya/Career"
-    criteria: "jobs, recruiters, HR outreach, interviews, applications, freelance offers"
+    label: Laya/Career
+    criteria: 'about a job application you submitted: employer messages, interview invites, assessments, assignments, onboarding,
+      application received or status'
+  job_alerts:
+    label: Laya/Job Alerts
+    criteria: 'new job openings you have not applied to: hiring posts, job recommendations, recruiter mass mail'
   finance:
-    label: "Laya/Finance"
-    criteria: "banks, credit cards, UPI, statements, bills, tax, insurance"
+    label: Laya/Finance
+    criteria: 'money: bank alerts, statements, bills, due or overdue payments, payment received, tax, subscription billing'
   security:
-    label: "Laya/Security"
-    criteria: "OTP, verification code, login alert, password reset, account change"
+    label: Laya/Security
+    criteria: 'sign-in security: OTP, verification code, verify email or new device, login or security alert, password, account
+      removed'
   travel:
-    label: "Laya/Travel & Events"
-    criteria: "flights, trains, hotels, cabs, tickets, bookings, event passes"
+    label: Laya/Travel & Events
+    criteria: 'trips and events: flight, train, bus, ride share, hotel, booking, boarding pass, e-ticket, event tickets'
   orders:
-    label: "Laya/Orders"
-    criteria: "shop or merchant purchases, order receipts, shipping, delivery, returns"
+    label: Laya/Orders
+    criteria: 'online shopping: order placed, purchase receipt, shipping, delivered, return'
   updates:
-    label: "Laya/Updates"
-    criteria: "automated app, service or social notifications, product or policy changes"
+    label: Laya/Updates
+    criteria: 'service notices: welcome to a new service, terms or privacy policy change, failed email delivery, support ticket
+      reply, ratings'
   newsletters:
-    label: "Laya/Newsletters"
-    criteria: "subscribed content, blogs, digests, editorial articles"
+    label: Laya/Newsletters
+    criteria: articles, advice, tips, blogs, digests, reviews, community newsletters
   promotions:
-    label: "Laya/Promotions"
-    criteria: "sales, offers, discounts, marketing, limited-time deals"
+    label: Laya/Promotions
+    criteria: 'marketing: offers, sales, rewards, paid courses, bootcamps, webinars, referral programs, review requests'
   suspicious:
-    label: "Laya/Suspicious"
-    criteria: "phishing, scam, fake prize, urgent request for password or payment"
-
-no_priority_types: [promotions, newsletters, suspicious]
-
-needs_action_question: "Does this email ask the recipient to reply, pay, confirm, or do something?"
-urgency_question: "How time-sensitive is this email?"
-urgency_levels: ["no deadline", "this month", "this week", "today", "immediately"]
-
+    label: Laya/Suspicious
+    criteria: 'phishing or scam: fake prize, unexpected request for password, OTP or payment'
+type_groups:
+  jobs:
+    criteria: 'jobs and careers: applications, recruiters, interviews, job openings'
+    members:
+    - career
+    - job_alerts
+  money:
+    criteria: 'money and shopping: banking, bills, payments, tax, orders, deliveries'
+    members:
+    - finance
+    - orders
+  account:
+    criteria: 'online accounts and services: sign-in codes, security alerts, service notices'
+    members:
+    - security
+    - updates
+  travel:
+    criteria: 'trips and events: flights, buses, rides, bookings, tickets'
+    members:
+    - travel
+  reading:
+    criteria: 'content and marketing: newsletters, articles, ads, offers, courses'
+    members:
+    - newsletters
+    - promotions
+  personal:
+    criteria: personal messages from friends or family
+    members:
+    - personal
+  scam:
+    criteria: phishing or scam attempts
+    members:
+    - suspicious
+no_priority_types:
+- promotions
+- newsletters
+- suspicious
+- job_alerts
+priority_enabled: false
+needs_action_question: Does this email ask the recipient to reply, pay, confirm, or do something?
+urgency_question: How time-sensitive is this email?
+urgency_levels:
+- no deadline
+- this month
+- this week
+- today
+- immediately
 priority_labels:
-  act_now: "Laya/!Act Now"
-  this_week: "Laya/!This Week"
-  unsure: "Laya/?Unsure"
-
+  act_now: Laya/!Act Now
+  this_week: Laya/!This Week
+  unsure: Laya/?Unsure
 thresholds:
-  type_conf: 0.55
+  type_conf: 0.5
   needs_action: 0.6
   urgency_act_now: 2.5
   urgency_this_week: 1.5
+head_max_len: 512
+body_limit: 600

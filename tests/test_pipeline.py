@@ -292,3 +292,12 @@ def test_dict_state_format_is_passed_to_laya(cfg):
     model = FakeModel()
     classify_message(bank_msg("m1"), dataclasses.replace(cfg, state_format="dict"), Classifier(cfg, model))
     assert isinstance(model.calls[0][0], dict) and model.calls[0][0]["subject"] == "Statement"
+
+
+def test_priority_disabled_asks_no_action_question(cfg):
+    import dataclasses
+    model = FakeModel(type_="finance", needs_action=0.99, urgency=4.0)
+    out = classify_message(bank_msg("m1"), dataclasses.replace(cfg, priority_enabled=False),
+                           Classifier(cfg, model))
+    assert len(model.calls) == 1 and "type" in model.calls[0][1]
+    assert out.decision.priority is None

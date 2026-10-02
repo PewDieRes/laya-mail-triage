@@ -15,11 +15,12 @@ class Decision:
     unsure: bool
 
     def label_names(self, cfg: Config) -> list[str]:
+        if self.unsure:  # never show a type guess Laya is not confident about
+            return [cfg.priority_labels["unsure"]] + (
+                [cfg.priority_labels[self.priority]] if self.priority else [])
         names = [cfg.type_labels[self.type]]
         if self.priority:
             names.append(cfg.priority_labels[self.priority])
-        if self.unsure:
-            names.append(cfg.priority_labels["unsure"])
         return names
 
 

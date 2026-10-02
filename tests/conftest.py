@@ -11,5 +11,5 @@ REPO = Path(__file__).resolve().parent.parent
 @pytest.fixture
 def cfg():
     return dataclasses.replace(
-        load_config(REPO / "config"), vip=frozenset({"boss@example.com", "@family.org"})
+        load_config(REPO / "tests" / "fixtures" / "config"), vip=frozenset({"boss@example.com", "@family.org"})
     )

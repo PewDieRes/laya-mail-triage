@@ -54,7 +54,7 @@ def test_forced_type_overrides_laya(cfg):
 def test_low_confidence_marks_unsure(cfg):
     decision = decide(make_laya(type_conf=0.4), RuleHits(), cfg)
     assert decision.unsure
-    assert decision.label_names(cfg) == ["Laya/Finance", "Laya/?Unsure"]
+    assert decision.label_names(cfg) == ["Laya/?Unsure"]  # no type guess shown
 
 
 def test_missing_type_raises(cfg):
@@ -95,3 +95,8 @@ def test_priority_signals_rules(cfg):
     assert decide(make_laya(signals=(("wait", 0.2), ("task", 0.1))), RuleHits(), c).priority is None
     assert decide(make_laya(signals=(("wait", 0.2), ("task", 0.1))), RuleHits(vip=True), c).priority == "act_now"
     assert decide(make_laya(type="promotions", signals=(("wait", 0.9),)), RuleHits(), c).priority is None
+
+
+def test_unsure_vip_keeps_act_now(cfg):
+    decision = decide(make_laya(type_conf=0.2), RuleHits(vip=True, names=("vip",)), cfg)
+    assert decision.label_names(cfg) == ["Laya/?Unsure", "Laya/!Act Now"]
