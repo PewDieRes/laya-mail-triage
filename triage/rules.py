@@ -1,5 +1,7 @@
 """Deterministic rules that run before Laya. They decide facts Laya cannot see
-from text alone: sender authentication and the owner's VIP list."""
+from text alone: sender authentication and the owner's VIP list. The VIP boost
+applies only to verified senders; unverified VIP mail is recorded as
+"vip_unverified" and classified normally."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -31,7 +33,8 @@ def apply_rules(f: Features, vip: frozenset[str]) -> RuleHits:
     if f.reply_to_domain and f.reply_to_domain != f.from_domain and not f.auth.verified:
         names.append("reply_to_mismatch")
         forced_type = SUSPICIOUS
-    vip_hit = is_vip(f.from_email, vip)
-    if vip_hit:
-        names.append("vip")
+    vip_hit = False
+    if is_vip(f.from_email, vip):
+        vip_hit = f.auth.verified
+        names.append("vip" if vip_hit else "vip_unverified")
     return RuleHits(forced_type=forced_type, vip=vip_hit, names=tuple(names))

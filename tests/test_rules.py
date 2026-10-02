@@ -50,4 +50,16 @@ def test_reply_to_mismatch_on_verified_sender_is_fine():
 def test_spoofed_vip_is_still_suspicious():
     f = make_features(from_email="boss@example.com", auth=Auth(spf="fail", dkim="fail", dmarc="fail"))
     hits = apply_rules(f, VIP)
-    assert hits == RuleHits(forced_type="suspicious", vip=True, names=("auth_fail", "vip"))
+    assert hits == RuleHits(forced_type="suspicious", vip=False, names=("auth_fail", "vip_unverified"))
+
+
+def test_unverified_vip_gets_no_boost():
+    f = make_features(from_email="boss@example.com", auth=Auth(spf="none", dkim="none", dmarc="none"))
+    assert apply_rules(f, VIP) == RuleHits(forced_type=None, vip=False, names=("vip_unverified",))
+
+
+def test_vip_with_single_failure_gets_no_boost():
+    f = make_features(from_email="boss@example.com", auth=Auth(spf="pass", dkim="fail", dmarc="none"))
+    hits = apply_rules(f, VIP)
+    assert hits.vip is False
+    assert "vip_unverified" in hits.names

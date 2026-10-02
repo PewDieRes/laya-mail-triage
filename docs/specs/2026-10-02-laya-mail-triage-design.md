@@ -171,7 +171,7 @@ Body: Dear customer, your statement for card ending 1234 ...
 
 | Rule | Effect |
 |---|---|
-| `vip` | The sender is in `vip.txt` (case-insensitive exact match, or `@domain` wildcard) → force Priority `!Act Now` |
+| `vip` | The sender is in `vip.txt` (case-insensitive exact match, or `@domain` wildcard) and the sender is verified (DMARC pass, or SPF and DKIM both pass) → force Priority `!Act Now`. Unverified VIP mail gets no boost and is recorded as `vip_unverified` |
 | `auth_fail` | `dmarc=fail`, or both SPF and DKIM fail → force Type `Suspicious` |
 | `reply_to_mismatch` | The Reply-To domain differs from the From domain **and** the sender isn't verified → force Type `Suspicious` |
 
