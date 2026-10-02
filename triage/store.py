@@ -43,7 +43,7 @@ class Store:
 
     def is_done(self, msg_id: str) -> bool:
         row = self.db.execute("SELECT status FROM processed WHERE msg_id = ?", (msg_id,)).fetchone()
-        return row is not None and row[0] in ("ok", "skipped")
+        return row is not None and row[0] in ("ok", "skipped", "failed")
 
     def attempts(self, msg_id: str) -> int:
         row = self.db.execute("SELECT attempts FROM processed WHERE msg_id = ?", (msg_id,)).fetchone()

@@ -77,3 +77,12 @@ def test_context_manager_closes(tmp_path):
         store.db.execute("SELECT 1")
     with Store(tmp_path / "s.db") as again:
         assert again.is_done("m1")
+
+
+def test_failed_is_terminal(tmp_path):
+    with Store(tmp_path / "s.db") as store:
+        store.mark("m1", "error", [])
+        store.mark("m1", "failed", [])
+        assert store.is_done("m1")
+        assert store.retry_ids() == []
+        assert store.attempts("m1") == 1

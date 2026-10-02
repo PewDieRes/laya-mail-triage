@@ -60,3 +60,12 @@ def test_low_confidence_marks_unsure(cfg):
 def test_missing_type_raises(cfg):
     with pytest.raises(ValueError):
         decide(make_laya(type=None), RuleHits(), cfg)
+
+
+def test_none_scores_mean_no_laya_priority(cfg):
+    assert decide(make_laya(needs_action=None, urgency=None), RuleHits(), cfg).priority is None
+
+
+def test_vip_still_act_now_when_scores_none(cfg):
+    laya = make_laya(needs_action=None, urgency=None)
+    assert decide(laya, RuleHits(vip=True, names=("vip",)), cfg).priority == "act_now"

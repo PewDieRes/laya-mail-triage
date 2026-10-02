@@ -17,8 +17,8 @@ class LayaResult:
     type: str | None
     type_conf: float
     top2: tuple[tuple[str, float], ...]
-    needs_action: float
-    urgency: float
+    needs_action: float | None
+    urgency: float | None
     model: str
 
 
@@ -53,14 +53,20 @@ class Classifier:
             },
         }
 
-    def classify(self, state: str, skip_type: bool = False) -> LayaResult:
-        type_, type_conf, top2 = None, 1.0, ()
-        if not skip_type:
-            answer = self.model.predict(state, self.type_questions())["answers"]["type"]
-            type_ = answer["choice"]
-            type_conf = float(answer["answer_confidence"])
-            ranked = sorted(answer["probabilities"].items(), key=lambda kv: -kv[1])
-            top2 = tuple((label, float(p)) for label, p in ranked[:2])
+    def classify(self, state: str, skip_type: bool = False,
+                 skip_action_types: frozenset[str] = frozenset()) -> LayaResult:
+        if skip_type:
+            return LayaResult(type=None, type_conf=1.0, top2=(), needs_action=None,
+                              urgency=None, model="rules")
+        result = self.model.predict(state, self.type_questions())
+        answer = result["answers"]["type"]
+        type_ = answer["choice"]
+        type_conf = float(answer["answer_confidence"])
+        ranked = sorted(answer["probabilities"].items(), key=lambda kv: -kv[1])
+        top2 = tuple((label, float(p)) for label, p in ranked[:2])
+        model_name = result.get("routing", {}).get("model", "unknown")
+        if type_ in skip_action_types:
+            return LayaResult(type_, type_conf, top2, None, None, model_name)
         result = self.model.predict(state, self.action_questions())
         answers = result["answers"]
         return LayaResult(
