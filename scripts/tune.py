@@ -35,8 +35,8 @@ def evaluate(config_dir: Path, labels: list[dict], model, type_only: bool = Fals
     rows, started = [], time.perf_counter()
     for label in labels:
         raw = json.loads((ROOT / "data" / "cache" / f"{label['msg_id']}.json").read_text())
-        recall = (lambda _s, t=label["true_type"]: t) if oracle_type else None
-        out = classify_message(raw, cfg, classifier, recall)
+        known = label["true_type"] if oracle_type else None
+        out = classify_message(raw, cfg, classifier, known)
         rows.append((label, out))
     elapsed = time.perf_counter() - started
 

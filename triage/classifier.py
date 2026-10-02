@@ -111,10 +111,10 @@ class Classifier:
         if skip_type:
             return LayaResult(type=None, type_conf=1.0, top2=(), needs_action=None,
                               urgency=None, model="rules")
-        if known_type is not None:  # remembered sender: only the action/priority question
+        if known_type is not None:  # type given by the caller (dev tuning): only the action question
             if known_type in skip_action_types:
-                return LayaResult(known_type, 1.0, ((known_type, 1.0),), None, None, "memory")
-            return self._with_action(state, known_type, 1.0, ((known_type, 1.0),), "memory")
+                return LayaResult(known_type, 1.0, ((known_type, 1.0),), None, None, "given")
+            return self._with_action(state, known_type, 1.0, ((known_type, 1.0),), "given")
         result = self._predict(state, self.type_questions(exclude_types))
         dist = self._type_distribution(result["answers"], exclude_types)
         ranked = sorted(dist.items(), key=lambda kv: -kv[1])

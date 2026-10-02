@@ -138,7 +138,7 @@ def test_known_type_skips_type_question(cfg):
     model = FakeModel(needs_action=0.7, urgency=3.0)
     result = Classifier(cfg, model).classify("s", known_type="finance")
     assert len(model.calls) == 1 and "type" not in model.calls[0][1]
-    assert (result.type, result.type_conf, result.model) == ("finance", 1.0, "memory")
+    assert (result.type, result.type_conf, result.model) == ("finance", 1.0, "given")
     assert result.needs_action == 0.7
 
 

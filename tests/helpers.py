@@ -106,12 +106,6 @@ class FakeGmail:
             raise msg
         return msg
 
-    def get_label_ids(self, msg_id):
-        msg = self.messages[msg_id]
-        if isinstance(msg, Exception):
-            raise msg
-        return msg.get("labelIds", [])
-
     def ensure_labels(self, names):
         for name in names:
             self.label_ids.setdefault(name, f"id:{name}")

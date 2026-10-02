@@ -75,12 +75,6 @@ class GmailClient:
             num_retries=RETRIES
         )
 
-    def get_label_ids(self, msg_id: str) -> list[str]:
-        response = self._users().messages().get(userId="me", id=msg_id, format="minimal").execute(
-            num_retries=RETRIES
-        )
-        return response.get("labelIds", [])
-
     def ensure_labels(self, names: list[str]) -> dict[str, str]:
         response = self._users().labels().list(userId="me").execute(num_retries=RETRIES)
         existing = {label["name"]: label["id"] for label in response.get("labels", [])}

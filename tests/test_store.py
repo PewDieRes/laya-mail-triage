@@ -86,21 +86,3 @@ def test_failed_is_terminal(tmp_path):
         assert store.is_done("m1")
         assert store.retry_ids() == []
         assert store.attempts("m1") == 1
-
-
-def test_sender_memory_roundtrip(tmp_path):
-    with Store(tmp_path / "s.db") as store:
-        assert store.recall_sender("a@x.com") is None
-        store.remember_sender("A@X.com", "finance")
-        store.remember_sender("a@x.com", "orders")
-        assert store.recall_sender("a@x.com") == "orders"
-
-
-def test_recent_labelled_returns_sender_and_labels(tmp_path):
-    with Store(tmp_path / "s.db") as store:
-        store.log_prediction("r", make_features(msg_id="m1", from_email="bank@x.com"), make_laya(),
-                             RuleHits(), ["Laya/Finance"])
-        store.mark("m1", "ok", ["Laya/Finance"])
-        store.mark("m2", "skipped", [])
-        assert store.recent_labelled(0) == [("m1", "bank@x.com", ["Laya/Finance"])]
-        assert store.recent_labelled(2**40) == []
