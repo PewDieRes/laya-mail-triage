@@ -5,6 +5,7 @@ Loads Laya once. Progress (one coverage line per month) goes to data/backfill-pr
 import logging
 import os
 import sys
+import time
 from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -15,11 +16,26 @@ sys.path.insert(0, str(ROOT))
 from triage.classifier import Classifier, load_router  # noqa: E402
 from triage.config import load_config  # noqa: E402
 from triage.coverage import day_window, month_coverage, range_query  # noqa: E402
-from triage.gmail_client import GmailClient  # noqa: E402
+from google.auth.exceptions import RefreshError  # noqa: E402
+
+from triage.gmail_client import AuthError, GmailClient  # noqa: E402
 from triage.pipeline import run_once  # noqa: E402
 from triage.store import Store  # noqa: E402
 
 log = logging.getLogger("backfill")
+RETRY_SECONDS = 60
+
+
+def with_retry(step, sleep=time.sleep):
+    """Run one month's step, waiting out network drops; auth problems still stop the run."""
+    while True:
+        try:
+            return step()
+        except (AuthError, RefreshError):
+            raise
+        except Exception as exc:
+            log.warning("month step failed (%s); retrying in %ss", exc, RETRY_SECONDS)
+            sleep(RETRY_SECONDS)
 
 
 def month_start(year: int, month: int) -> date:
@@ -69,15 +85,15 @@ def main() -> None:
     classifier = Classifier(cfg, load_router())
     with Store(ROOT / "data" / "state.db") as store:
         for year, month in extra:
-            label_month(gmail, store, cfg, classifier, year, month, tz, progress)
-        stop = oldest_inbox_month(gmail, next_start(start_year, start_month), tz)
+            with_retry(lambda y=year, m=month: label_month(gmail, store, cfg, classifier, y, m, tz, progress))
+        stop = with_retry(lambda: oldest_inbox_month(gmail, next_start(start_year, start_month), tz))
         if stop is None:
             log.info("no inbox mail up to the end of %s-%02d; nothing to backfill", start_year, start_month)
             return
         log.info("oldest inbox email is from %s-%02d", *stop)
         year, month = start_year, start_month
         while (year, month) >= stop:
-            label_month(gmail, store, cfg, classifier, year, month, tz, progress)
+            with_retry(lambda y=year, m=month: label_month(gmail, store, cfg, classifier, y, m, tz, progress))
             year, month = previous(year, month)
         with progress.open("a") as fh:
             fh.write(f"done: reached the oldest inbox month {stop[0]}-{stop[1]:02d}\n")

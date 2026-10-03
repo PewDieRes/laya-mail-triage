@@ -30,3 +30,27 @@ def test_oldest_inbox_month_has_no_negative_after_bound():
 def test_previous_month_wraps_year():
     assert backfill.previous(2026, 1) == (2025, 12)
     assert backfill.previous(2026, 3) == (2026, 2)
+
+
+def test_with_retry_waits_out_network_errors():
+    calls, sleeps = [], []
+
+    def step():
+        calls.append(1)
+        if len(calls) < 3:
+            raise OSError("Unable to find the server at gmail.googleapis.com")
+        return "ok"
+
+    assert backfill.with_retry(step, sleep=sleeps.append) == "ok"
+    assert len(calls) == 3 and sleeps == [backfill.RETRY_SECONDS] * 2
+
+
+def test_with_retry_stops_on_auth_error():
+    import pytest
+    from triage.gmail_client import AuthError
+
+    def step():
+        raise AuthError("revoked")
+
+    with pytest.raises(AuthError):
+        backfill.with_retry(step, sleep=lambda s: None)
