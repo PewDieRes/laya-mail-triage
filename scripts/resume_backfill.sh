@@ -7,7 +7,7 @@ if ! docker info >/dev/null 2>&1; then
   echo "Docker is not running: open Docker Desktop, wait until it says 'Running', then re-run this." >&2
   exit 1
 fi
-START=${1:-2025-04}
+START=${1:-$(date +%Y-%m)}
 echo "# resumed $(date '+%Y-%m-%d %H:%M') from $START" >> data/backfill-progress.txt
 nohup caffeinate -is docker compose run --rm -v ./triage:/app/triage -v ./scripts:/app/scripts triage \
   python scripts/backfill_months.py "$START" >> data/backfill.log 2>&1 &
